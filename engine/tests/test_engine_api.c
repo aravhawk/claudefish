@@ -34,6 +34,24 @@ static void expect_int_eq(const char *test_name, long long actual, long long exp
     failf(test_name, message);
 }
 
+static void expect_string_eq(const char *test_name, const char *actual, const char *expected, const char *label) {
+    char message[160];
+
+    if (actual != NULL && expected != NULL && strcmp(actual, expected) == 0) {
+        return;
+    }
+
+    snprintf(
+        message,
+        sizeof(message),
+        "%s mismatch: expected \"%s\", got \"%s\"",
+        label,
+        expected != NULL ? expected : "(null)",
+        actual != NULL ? actual : "(null)"
+    );
+    failf(test_name, message);
+}
+
 static bool parse_position(const char *test_name, const char *fen, Position *pos) {
     if (!position_from_fen(pos, fen)) {
         char message[256];
@@ -384,10 +402,13 @@ static void test_engine_api_end_to_end(void) {
     expect_true(test_name, csv_contains_move(get_legal_moves(), "e7e8n"), "knight promotion should use UCI suffix");
 
     for (index = 0; index < sizeof(positions) / sizeof(positions[0]); ++index) {
+        legal_moves = NULL;
+
         expect_int_eq(test_name, set_position(positions[index]), 0, "sequential set_position");
+        legal_moves = get_legal_moves();
         best_move = search_best_move(5, 40);
         expect_true(test_name, is_valid_uci_move(best_move), "sequential search should return UCI");
-        expect_true(test_name, csv_contains_move(get_legal_moves(), best_move), "sequential best move should be legal");
+        expect_true(test_name, csv_contains_move(legal_moves, best_move), "sequential best move should be legal");
     }
 }
 
@@ -429,6 +450,56 @@ static void test_set_position_preserves_repetition_history(void) {
     expect_int_eq(test_name, evaluate_position(), 0, "repetition should evaluate as a draw through set_position");
 }
 
+static void test_frontend_flow_preserves_repetition_history(void) {
+    const char *test_name = "frontend_flow_preserves_repetition_history";
+    const char *initial_fen = "8/8/8/k7/4q3/8/K7/2Q5 w - - 0 1";
+    const char *user_moves[] = { "c1g1", "a2a3", "a3a2", "a2a3", "a3a2" };
+    const char *engine_moves[] = { "e4c2", "c2c3", "c3c2", "c2c3", "c3c2" };
+    Position pos;
+    size_t index;
+
+    ++tests_run;
+
+    expect_int_eq(test_name, init_engine(), 0, "init_engine");
+    if (!parse_position(test_name, initial_fen, &pos)) {
+        return;
+    }
+
+    for (index = 0; index < sizeof(user_moves) / sizeof(user_moves[0]); ++index) {
+        Move user_move = find_move_by_uci(&pos, user_moves[index]);
+        char fen[128];
+        const char *best_move;
+        Move reply;
+
+        expect_true(test_name, user_move != 0, "expected user move to be legal");
+        if (user_move == 0 || !movegen_make_move(&pos, user_move)) {
+            failf(test_name, "failed to apply user move in frontend flow");
+            return;
+        }
+
+        expect_true(test_name, position_to_fen(&pos, fen, sizeof(fen)), "position_to_fen after user move");
+        expect_int_eq(test_name, set_position(fen), 0, "set_position after user move");
+
+        best_move = search_best_move(4, 50);
+        expect_true(test_name, is_valid_uci_move(best_move), "search_best_move should return UCI");
+        expect_string_eq(test_name, best_move, engine_moves[index], "engine reply");
+
+        reply = find_move_by_uci(&pos, best_move);
+        expect_true(test_name, reply != 0, "engine reply should be legal in local position");
+        if (reply == 0 || !movegen_make_move(&pos, reply)) {
+            failf(test_name, "failed to apply engine reply in frontend flow");
+            return;
+        }
+    }
+
+    expect_int_eq(
+        test_name,
+        evaluate_position(),
+        0,
+        "frontend-style repetition should evaluate as a draw after search_best_move"
+    );
+}
+
 int test_engine_api_run(void) {
     tests_run = 0;
     tests_failed = 0;
@@ -439,6 +510,7 @@ int test_engine_api_run(void) {
     test_search_respects_time_limits();
     test_engine_api_end_to_end();
     test_set_position_preserves_repetition_history();
+    test_frontend_flow_preserves_repetition_history();
 
     if (tests_failed == 0) {
         printf("PASS: %d engine API tests passed\n", tests_run);

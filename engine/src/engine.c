@@ -35,6 +35,14 @@ static Move engine_first_legal_move(Position *pos) {
     return legal_moves.count > 0 ? legal_moves.moves[0] : 0;
 }
 
+static bool engine_apply_move(Position *pos, Move move) {
+    if (pos == NULL || move == 0) {
+        return false;
+    }
+
+    return movegen_make_move(pos, move);
+}
+
 static void engine_reset_history(Position *pos) {
     if (pos == NULL) {
         return;
@@ -162,7 +170,13 @@ const char *search_best_move(int depth, int time_ms) {
 
     engine_set_empty_string(engine_best_move_buffer, sizeof(engine_best_move_buffer));
 
-    if (book_probe_move(&engine_position, &move) && search_move_to_uci(move, engine_best_move_buffer)) {
+    if (book_probe_move(&engine_position, &move)) {
+        if (search_move_to_uci(move, engine_best_move_buffer) &&
+            engine_apply_move(&engine_position, move)) {
+            return engine_best_move_buffer;
+        }
+
+        engine_set_empty_string(engine_best_move_buffer, sizeof(engine_best_move_buffer));
         return engine_best_move_buffer;
     }
 
@@ -182,7 +196,9 @@ const char *search_best_move(int depth, int time_ms) {
         move = result.best_move;
     }
 
-    if (move == 0 || !search_move_to_uci(move, engine_best_move_buffer)) {
+    if (move == 0 ||
+        !search_move_to_uci(move, engine_best_move_buffer) ||
+        !engine_apply_move(&engine_position, move)) {
         engine_set_empty_string(engine_best_move_buffer, sizeof(engine_best_move_buffer));
     }
 

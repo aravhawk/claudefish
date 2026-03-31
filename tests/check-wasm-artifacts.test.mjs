@@ -24,6 +24,9 @@ const PROMOTION_FEN = "6k1/4P3/8/8/8/8/8/6K1 w - - 0 1";
 const MEMORY_TEST_FEN = "4k3/8/3p4/3P4/3K4/8/8/8 w - - 0 1";
 const REPETITION_START_FEN = "rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const REPETITION_MOVES = ["g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8"];
+const FRONTEND_FLOW_START_FEN = "8/8/8/k7/4q3/8/K7/2Q5 w - - 0 1";
+const FRONTEND_FLOW_USER_MOVES = ["c1g1", "a2a3", "a3a2", "a2a3", "a3a2"];
+const FRONTEND_FLOW_ENGINE_MOVES = ["e4c2", "c2c3", "c3c2", "c2c3", "c3c2"];
 
 function setGlobalProperty(name, value) {
   Object.defineProperty(globalThis, name, {
@@ -154,10 +157,10 @@ test("engine API returns the expected types and move count", async () => {
 
   const initStatus = api.initEngine();
   const setPositionStatus = api.setPosition(START_FEN);
-  const bestMove = api.searchBestMove(4, 250);
   const evaluation = api.evaluatePosition();
   const legalMovesCsv = api.getLegalMovesCsv();
   const legalMoves = splitMoves(legalMovesCsv);
+  const bestMove = api.searchBestMove(4, 250);
 
   assert.equal(initStatus, 0, "init_engine should succeed");
   assert.equal(typeof setPositionStatus, "number");
@@ -223,6 +226,45 @@ test("FEN-only set_position flow preserves repetition history", async () => {
   }
 
   assert.equal(api.evaluatePosition(), 0, "repetition through set_position should be scored as a draw");
+});
+
+test("frontend-style set_position/search flow preserves repetition history", async () => {
+  const { engineModule } = await instantiateEngine();
+  const api = createEngineApi(engineModule);
+  const game = new Chess(FRONTEND_FLOW_START_FEN);
+
+  assert.equal(api.initEngine(), 0, "init_engine should succeed");
+
+  for (let index = 0; index < FRONTEND_FLOW_USER_MOVES.length; index += 1) {
+    const userMove = FRONTEND_FLOW_USER_MOVES[index];
+    const expectedEngineMove = FRONTEND_FLOW_ENGINE_MOVES[index];
+    const playedUserMove = game.move({
+      from: userMove.slice(0, 2),
+      to: userMove.slice(2, 4),
+      ...(userMove.length === 5 ? { promotion: userMove[4] } : {}),
+    });
+
+    assert.ok(playedUserMove, `user move ${userMove} should be legal in the frontend flow`);
+    assert.equal(api.setPosition(game.fen()), 0, `set_position should accept frontend-flow FEN ${game.fen()}`);
+
+    const bestMove = api.searchBestMove(4, 50);
+
+    assert.equal(bestMove, expectedEngineMove, `search_best_move should follow the expected repetition line at step ${index + 1}`);
+
+    const playedEngineMove = game.move({
+      from: bestMove.slice(0, 2),
+      to: bestMove.slice(2, 4),
+      ...(bestMove.length === 5 ? { promotion: bestMove[4] } : {}),
+    });
+
+    assert.ok(playedEngineMove, `engine move ${bestMove} should be legal in the frontend flow`);
+  }
+
+  assert.equal(
+    api.evaluatePosition(),
+    0,
+    "frontend-style repetition should be scored as a draw after search_best_move advances the engine position",
+  );
 });
 
 test("castling and promotion moves use UCI format", async () => {
