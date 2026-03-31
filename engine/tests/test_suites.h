@@ -6,5 +6,6 @@ int test_movegen_run(void);
 int test_legality_run(void);
 int test_evaluate_run(void);
 int test_perft_run(void);
+int test_search_run(void);
 
 #endif
