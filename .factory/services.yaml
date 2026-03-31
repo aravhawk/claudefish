@@ -1,0 +1,17 @@
+commands:
+  install: pnpm install
+  build-engine: source ./emsdk/emsdk_env.sh && ./scripts/build-engine.sh
+  build: pnpm build
+  dev: pnpm dev --turbopack --port 3000
+  test-engine: gcc -O2 -o /tmp/claudefish_test engine/src/*.c engine/tests/*.c -lm && /tmp/claudefish_test
+  test: pnpm test
+  typecheck: pnpm typecheck
+  lint: pnpm lint
+
+services:
+  web:
+    start: pnpm dev --turbopack --port 3000
+    stop: lsof -ti :3000 | xargs kill -9 2>/dev/null || true
+    healthcheck: curl -sf http://localhost:3000
+    port: 3000
+    depends_on: []
