@@ -9,13 +9,13 @@
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: #8bb8ff;
+  color: var(--theme-accent);
 }
 
 .title {
   margin: 0;
   font-size: 1.2rem;
-  color: #f8fbff;
+  color: var(--theme-heading);
 }
 
 .groups {
@@ -28,21 +28,21 @@
   gap: 0.7rem;
   padding: 0.9rem 1rem;
   border-radius: 1rem;
-  background: rgba(14, 24, 43, 0.7);
-  border: 1px solid rgba(155, 196, 255, 0.12);
+  background: var(--theme-panel-muted);
+  border: 1px solid var(--theme-panel-border);
 }
 
 .groupTitle {
   margin: 0;
   font-size: 0.95rem;
-  color: #f7fbff;
+  color: var(--theme-heading);
 }
 
 .groupSubtitle {
   margin: 0.2rem 0 0;
   font-size: 0.82rem;
   line-height: 1.45;
-  color: #9eb7dc;
+  color: var(--theme-text-soft);
 }
 
 .pieceRow {
@@ -59,8 +59,8 @@
   width: 2.35rem;
   height: 2.35rem;
   border-radius: 0.85rem;
-  background: rgba(7, 12, 22, 0.7);
-  border: 1px solid rgba(155, 196, 255, 0.12);
+  background: var(--theme-chip);
+  border: 1px solid var(--theme-panel-border);
 }
 
 .pieceGlyph {
@@ -75,26 +75,26 @@
 }
 
 .whitePiece {
-  color: #fff8ec;
+  color: var(--theme-piece-white);
   text-shadow:
-    -1px -1px 0 rgba(86, 58, 28, 0.4),
-    1px -1px 0 rgba(86, 58, 28, 0.4),
-    -1px 1px 0 rgba(86, 58, 28, 0.4),
-    1px 1px 0 rgba(86, 58, 28, 0.4),
+    -1px -1px 0 var(--theme-piece-white-shadow),
+    1px -1px 0 var(--theme-piece-white-shadow),
+    -1px 1px 0 var(--theme-piece-white-shadow),
+    1px 1px 0 var(--theme-piece-white-shadow),
     0 2px 3px rgba(17, 24, 39, 0.22);
 }
 
 .blackPiece {
-  color: #24160e;
+  color: var(--theme-piece-black);
   text-shadow:
-    -1px -1px 0 rgba(255, 247, 232, 0.28),
-    1px -1px 0 rgba(255, 247, 232, 0.28),
-    -1px 1px 0 rgba(255, 247, 232, 0.28),
-    1px 1px 0 rgba(255, 247, 232, 0.28),
+    -1px -1px 0 var(--theme-piece-black-shadow),
+    1px -1px 0 var(--theme-piece-black-shadow),
+    -1px 1px 0 var(--theme-piece-black-shadow),
+    1px 1px 0 var(--theme-piece-black-shadow),
     0 2px 3px rgba(17, 24, 39, 0.24);
 }
 
 .emptyState {
   font-size: 0.88rem;
-  color: #c9d6ee;
+  color: var(--theme-text-muted);
 }

@@ -26,6 +26,14 @@ import {
   type GameResult,
   type ParsedUciMove,
 } from "./gameUtils";
+import {
+  BOARD_THEMES,
+  getBoardTheme,
+  getBoardThemeStyle,
+  type ThemeKey,
+} from "./themes";
+
+const LOADING_PREVIEW_SQUARES = Array.from({ length: 16 }, (_, index) => index);
 
 export default function Home() {
   const {
@@ -38,12 +46,16 @@ export default function Home() {
   } = useChessEngine();
   const [playedMoves, setPlayedMoves] = useState<ParsedUciMove[]>([]);
   const [difficulty, setDifficulty] = useState<DifficultyKey>("medium");
+  const [themeKey, setThemeKey] = useState<ThemeKey>("classic-wood");
   const [evaluation, setEvaluation] = useState<number | null>(null);
   const [positionError, setPositionError] = useState<string | null>(null);
+  const [loadingDismissed, setLoadingDismissed] = useState(false);
   const difficultyRef = useRef<DifficultyKey>(difficulty);
   const evaluationRequestIdRef = useRef(0);
   const engineSearchIdRef = useRef(0);
 
+  const theme = useMemo(() => getBoardTheme(themeKey), [themeKey]);
+  const themeStyle = useMemo(() => getBoardThemeStyle(theme), [theme]);
   const game = useMemo(() => replayGame(playedMoves), [playedMoves]);
   const history = useMemo(() => game.history({ verbose: true }) as Move[], [game]);
   const currentFen = game.fen();
@@ -57,6 +69,8 @@ export default function Home() {
   const moveCount = history.length;
   const undoPlyCount = getUndoPlyCount(currentFen, moveCount);
   const boardDisabled = !isReady || isThinking || result !== null;
+  const showLoadingScreen = !isReady || !loadingDismissed;
+  const loadingScreenClosing = isReady && !loadingDismissed;
   const statusLabel = getStatusLabel({
     engineError,
     game,
@@ -68,6 +82,24 @@ export default function Home() {
   useEffect(() => {
     difficultyRef.current = difficulty;
   }, [difficulty]);
+
+  useEffect(() => {
+    if (!isReady) {
+      const frameId = window.requestAnimationFrame(() => {
+        setLoadingDismissed(false);
+      });
+
+      return () => window.cancelAnimationFrame(frameId);
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setLoadingDismissed(true);
+    }, 320);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isReady]);
 
   useEffect(() => {
     if (!isReady) {
@@ -210,15 +242,61 @@ export default function Home() {
   }, [cancelPendingEngineWork, undoPlyCount]);
 
   return (
-    <main className={styles.page}>
+    <main className={styles.page} data-theme={theme.key} style={themeStyle}>
+      <div aria-hidden="true" className={styles.backdropGlow} />
+      <div aria-hidden="true" className={styles.backdropMesh} />
+
+      {showLoadingScreen ? (
+        <div
+          aria-live="polite"
+          className={`${styles.loadingOverlay} ${
+            loadingScreenClosing ? styles.loadingOverlayExit : ""
+          }`}
+          role="status"
+        >
+          <div className={styles.loadingPanel}>
+            <p className={styles.eyebrow}>Initializing Claudefish</p>
+            <h2 className={styles.loadingTitle}>{theme.loadingLabel}</h2>
+            <p className={styles.loadingCopy}>
+              Streaming the WebAssembly engine, preparing the board theme, and
+              bringing the controls online.
+            </p>
+
+            <div aria-hidden="true" className={styles.loadingPreview}>
+              {LOADING_PREVIEW_SQUARES.map((squareIndex) => (
+                <span
+                  className={
+                    squareIndex % 2 === 0
+                      ? styles.loadingPreviewLight
+                      : styles.loadingPreviewDark
+                  }
+                  key={squareIndex}
+                />
+              ))}
+            </div>
+
+            <div className={styles.loadingStatusRow}>
+              <span aria-hidden="true" className={styles.loadingSpinner} />
+              <div>
+                <strong>WASM engine booting</strong>
+                <span className={styles.loadingStatusMeta}>
+                  The board will become interactive as soon as the worker is ready.
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className={styles.layout}>
         <section className={`${styles.panel} ${styles.heroPanel}`}>
           <p className={styles.eyebrow}>Claudefish</p>
-          <h1 className={styles.heroTitle}>Play against the engine.</h1>
+          <h1 className={styles.heroTitle}>Play against the engine in a polished match room.</h1>
           <p className={styles.copy}>
             Your moves are validated by <code>chess.js</code>, then Claudefish searches
             for a reply in a Web Worker so the interface stays responsive while the
-            engine thinks.
+            engine thinks. Switch themes at any moment without interrupting the
+            position, move list, captures, or evaluation.
           </p>
           <div className={styles.heroStats}>
             <div className={styles.heroStat}>
@@ -226,8 +304,61 @@ export default function Home() {
               <span className={styles.heroStatValue}>White</span>
             </div>
             <div className={styles.heroStat}>
+              <span className={styles.captionLabel}>Active theme</span>
+              <span className={styles.heroStatValue}>{theme.label}</span>
+            </div>
+            <div className={styles.heroStat}>
               <span className={styles.captionLabel}>Current level</span>
               <span className={styles.heroStatValue}>{difficultyConfig.label}</span>
+            </div>
+          </div>
+
+          <div className={styles.controlsBlock}>
+            <div className={styles.selectorHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>Board theme</h2>
+                <p className={styles.sectionCopy}>
+                  All colors update instantly while your current game stays exactly in
+                  place.
+                </p>
+              </div>
+              <div className={styles.selectorMeta}>3 curated looks</div>
+            </div>
+
+            <div className={styles.themeGrid}>
+              {BOARD_THEMES.map((option) => {
+                const isSelected = option.key === themeKey;
+
+                return (
+                  <button
+                    aria-pressed={isSelected}
+                    className={`${styles.themeButton} ${
+                      isSelected ? styles.themeButtonActive : ""
+                    }`}
+                    key={option.key}
+                    onClick={() => setThemeKey(option.key)}
+                    style={
+                      {
+                        "--theme-preview-light": option.colors.squareLight,
+                        "--theme-preview-dark": option.colors.squareDark,
+                        "--theme-preview-accent": option.colors.accentStrong,
+                      } as CSSProperties
+                    }
+                    type="button"
+                  >
+                    <span aria-hidden="true" className={styles.themePreview}>
+                      <span className={styles.themePreviewLight} />
+                      <span className={styles.themePreviewDark} />
+                      <span className={styles.themePreviewAccent} />
+                    </span>
+                    <span className={styles.themeButtonBody}>
+                      <span className={styles.themeLabel}>{option.label}</span>
+                      <span className={styles.themeMood}>{option.mood}</span>
+                      <span className={styles.themeDescription}>{option.description}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

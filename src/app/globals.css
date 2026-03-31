@@ -1,8 +1,58 @@
 :root {
   color-scheme: dark;
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #09111f;
-  color: #f5f7fb;
+  --font-body:
+    Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display:
+    "Playfair Display", "Iowan Old Style", "Palatino Linotype", "Book Antiqua",
+    Georgia, serif;
+  --theme-background: #140d08;
+  --theme-background-secondary: #2a1a0f;
+  --theme-background-accent: rgba(238, 190, 120, 0.18);
+  --theme-panel: rgba(35, 23, 14, 0.84);
+  --theme-panel-strong: rgba(53, 33, 19, 0.94);
+  --theme-panel-muted: rgba(61, 39, 21, 0.72);
+  --theme-panel-border: rgba(241, 206, 154, 0.18);
+  --theme-text: #f7efe2;
+  --theme-text-muted: #ddcbb5;
+  --theme-text-soft: #b8966f;
+  --theme-heading: #fff7ea;
+  --theme-accent: #d7a160;
+  --theme-accent-strong: #f0c788;
+  --theme-accent-soft: rgba(215, 161, 96, 0.18);
+  --theme-button-start: #8d6032;
+  --theme-button-end: #4e2f18;
+  --theme-button-border: rgba(244, 214, 165, 0.26);
+  --theme-button-text: #fff8ed;
+  --theme-button-hover: #f0c788;
+  --theme-button-shadow: rgba(25, 13, 5, 0.42);
+  --theme-board-frame: #4b301b;
+  --theme-board-frame-edge: rgba(255, 236, 202, 0.14);
+  --theme-board-inset: rgba(114, 68, 31, 0.78);
+  --theme-board-shadow: rgba(6, 2, 0, 0.58);
+  --theme-square-light: #e7c48f;
+  --theme-square-dark: #8f5a2f;
+  --theme-square-highlight: rgba(247, 196, 88, 0.28);
+  --theme-square-selected: rgba(255, 239, 200, 0.26);
+  --theme-square-check: rgba(180, 43, 43, 0.34);
+  --theme-square-target: rgba(108, 180, 142, 0.34);
+  --theme-square-indicator: rgba(63, 37, 15, 0.28);
+  --theme-square-indicator-ring: rgba(61, 35, 13, 0.48);
+  --theme-label-light: rgba(109, 62, 22, 0.88);
+  --theme-label-dark: rgba(255, 244, 221, 0.94);
+  --theme-piece-white: #fff7ea;
+  --theme-piece-white-shadow: rgba(98, 58, 24, 0.46);
+  --theme-piece-black: #2d1b0f;
+  --theme-piece-black-shadow: rgba(255, 238, 209, 0.28);
+  --theme-eval-dark: #2b1a0e;
+  --theme-eval-light: #fff3e1;
+  --theme-eval-divider: #f0c788;
+  --theme-overlay: rgba(14, 8, 4, 0.78);
+  --theme-spinner-track: rgba(255, 229, 193, 0.24);
+  --theme-spinner-head: #f0c788;
+  --theme-scrollbar-thumb: rgba(221, 177, 108, 0.36);
+  --theme-chip: rgba(75, 46, 22, 0.74);
+  background: var(--theme-background);
+  color: var(--theme-text);
 }
 
 * {
@@ -15,54 +65,49 @@ body {
   min-height: 100%;
 }
 
+html {
+  font-family: var(--font-body);
+  background: var(--theme-background);
+}
+
 body {
   min-height: 100vh;
-  background: radial-gradient(circle at top, #17345d 0%, #09111f 55%, #050912 100%);
+  font-family: var(--font-body);
+  background:
+    radial-gradient(circle at top, var(--theme-background-accent) 0%, transparent 46%),
+    linear-gradient(
+      180deg,
+      var(--theme-background-secondary) 0%,
+      var(--theme-background) 58%,
+      color-mix(in srgb, var(--theme-background) 88%, #000 12%) 100%
+    );
+  color: var(--theme-text);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
 a {
   color: inherit;
 }
 
-.page {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 2rem;
+code {
+  font-family:
+    "SFMono-Regular",
+    "SF Mono",
+    ui-monospace,
+    "Cascadia Code",
+    "Source Code Pro",
+    monospace;
 }
 
-.panel {
-  width: min(100%, 42rem);
-  padding: 2.5rem;
-  border-radius: 1.5rem;
-  background: rgba(10, 19, 35, 0.82);
-  border: 1px solid rgba(155, 196, 255, 0.18);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
-}
-
-.eyebrow {
-  margin: 0 0 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.75rem;
-  color: #8bb8ff;
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(2.5rem, 5vw, 3.5rem);
-}
-
-.lede {
-  margin: 1rem 0 0;
-  line-height: 1.6;
-  color: #c9d6ee;
-}
-
-.checklist {
-  margin: 1.5rem 0 0;
-  padding-left: 1.25rem;
-  display: grid;
-  gap: 0.75rem;
-  color: #e2ebfb;
+::selection {
+  background: var(--theme-accent-soft);
 }
