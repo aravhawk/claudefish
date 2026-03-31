@@ -61,6 +61,7 @@ Provides a clean React interface:
 ### Game Logic
 - **chess.js** manages game state, move validation, and move history on the main thread
 - chess.js is the single source of truth for the game state
+- Frontend draw detection that relies on `game.isThreefoldRepetition()` must preserve the live `chess.js` move history; rebuilding from the latest FEN alone drops repetition state even when the board position matches
 
 ### Board Component
 - Renders an 8×8 grid with SVG/CSS chess pieces

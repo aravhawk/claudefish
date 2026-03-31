@@ -1,0 +1,33 @@
+{
+  "featureId": "website-board-interaction",
+  "reviewedAt": "2026-03-31T22:04:21Z",
+  "commitId": "a20f1d1",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The reviewed commit satisfies the board-interaction contract: it wires chess.js-backed drag-and-drop and click-to-move flows, legal move and capture indicators, last-move and check highlighting, promotion gating, and special-move piece transitions via `boardState.ts`. The added board-state tests cover FEN parsing plus castling, en passant, and promotion transformations. I did not find any blocking correctness or regression issues, but there is one non-blocking touch-robustness gap around drag cancellation.",
+    "issues": [
+      {
+        "file": "src/components/Board/Board.tsx",
+        "line": 322,
+        "severity": "non_blocking",
+        "description": "Active drags are only cleaned up on `pointerup`; there is no `pointercancel` handler. On touch or pen devices, an interrupted gesture can leave `dragState` set, which keeps the source piece hidden and the floating drag piece stuck until the board rerenders."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The frontend-worker skill still tells workers to run frontend commands from a nonexistent `web/` subdirectory, while this repo and services manifest run Next.js from the repository root.",
+      "evidence": ".factory/skills/frontend-worker/SKILL.md:96-120 shows `cd web && pnpm dev/build/lint`; .factory/services.yaml:2-19 defines the project commands from the repo root."
+    },
+    {
+      "area": "skills",
+      "observation": "The frontend-worker skill documents an outdated `useChessEngine` API shape, so it is no longer a reliable reference for frontend engine integration work.",
+      "evidence": ".factory/skills/frontend-worker/SKILL.md:69-72 describes `{ isReady, isSearching, bestMove, evaluation, search, stop }`; src/hooks/useChessEngine.ts:177-184 actually returns `{ isReady, isThinking, error, searchBestMove, evaluatePosition, resetEngine }`."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The board-interaction feature meets its required drag, click, highlight, promotion, castling, and en-passant behaviors, with no blocking defects found. The only code issue is a non-blocking missing `pointercancel` cleanup path, and shared-state follow-up is limited to stale frontend-worker skill guidance."
+}

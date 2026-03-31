@@ -1,0 +1,38 @@
+{
+  "featureId": "website-engine-play",
+  "reviewedAt": "2026-03-31T22:05:06Z",
+  "commitId": "6b9dfeb86e951fd83a4456eff0ae27e2e040e515",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature successfully wires the website to `useChessEngine`, exposes the required difficulty presets, surfaces evaluation/thinking/game-over UI, and keeps engine traffic inside the worker hook. However, the page only persists the latest FEN in React state, so `chess.js` never retains the move history needed for threefold-repetition detection. That means one of the explicitly required draw outcomes cannot be reached from normal play.",
+    "issues": [
+      {
+        "file": "src/app/page.tsx",
+        "line": 56,
+        "severity": "blocking",
+        "description": "The page reconstructs `chess.js` from `gameSnapshot.fen` on every render instead of preserving move history. Because `getGameResult()` relies on `game.isThreefoldRepetition()`, repetition state is discarded every ply and the UI can never report the required threefold-repetition draw during actual gameplay."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The frontend-worker skill still tells workers to run the frontend from a `web/` subdirectory even though this repository's app lives at the repo root.",
+      "evidence": ".factory/skills/frontend-worker/SKILL.md:98-120 uses `cd web && ...`; compare with mission AGENTS.md:54-61, which documents the real root-level commands (`pnpm dev --turbopack --port 3001`, `pnpm typecheck`, `pnpm lint`)."
+    },
+    {
+      "area": "skills",
+      "observation": "The shared guidance does not explain the approved fallback when the mandated port 3001 is already occupied by a healthy instance, so workers have to improvise around `EADDRINUSE` despite the mission forbidding alternate ports.",
+      "evidence": "Mission AGENTS.md:5-11 and 88-92 require using port 3001 only; handoff 2026-03-31T21-25-55-634Z__website-engine-play__2229f61a-1eb4-4348-baf7-07c9d724f170.json:111-128 records that the worker reused the existing healthy server after hitting `EADDRINUSE` and explicitly suggested documenting that fallback."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The shared state documents say `chess.js` is the frontend source of truth, but they do not spell out that repetition detection requires preserving move history rather than reconstructing from the current FEN alone.",
+      "evidence": ".factory/library/architecture.md:61-63 and mission AGENTS.md:30-36 describe `chess.js` ownership of game state but omit the history requirement; the reviewed implementation rebuilt `new Chess(gameSnapshot.fen)` at src/app/page.tsx:56 and thereby lost the information needed for `isThreefoldRepetition()`."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Fail. The engine-play UI mostly matches the requested behavior, but the implementation drops chess.js history by storing only the latest FEN, so threefold-repetition draws cannot be detected even though they are part of the feature contract."
+}

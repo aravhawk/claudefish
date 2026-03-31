@@ -1,0 +1,94 @@
+{
+  "milestone": "website",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "nativeTest": {
+      "passed": true,
+      "command": "gcc -O2 -o /tmp/claudefish_test \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish/engine/src/\"*.c \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish/engine/tests/\"*.c -lm && /tmp/claudefish_test",
+      "exitCode": 0
+    },
+    "test": {
+      "passed": true,
+      "command": "pnpm --dir \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish\" test",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "pnpm --dir \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish\" typecheck",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "pnpm --dir \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish\" lint",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 5,
+    "passed": 3,
+    "failed": 2,
+    "failedFeatures": [
+      "website-engine-play",
+      "website-themes-polish"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "website-engine-play",
+      "severity": "blocking",
+      "description": "src/app/page.tsx:56 reconstructs chess.js from only the latest FEN on every render, so move history is discarded and isThreefoldRepetition() can never report the required draw condition during real gameplay."
+    },
+    {
+      "featureId": "website-themes-polish",
+      "severity": "blocking",
+      "description": "src/app/page.tsx:428 still renders game-over state as an inline result banner instead of the requested premium game-over overlay, so the feature is incomplete."
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Updated `.factory/library/architecture.md` to note that frontend threefold-repetition detection must preserve live chess.js move history rather than recreating state from the latest FEN alone.",
+      "sourceFeature": "website-engine-play"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "frontend-worker skill",
+      "suggestion": "Replace the stale `cd web && ...` examples with repo-root commands from `.factory/services.yaml`, and update the documented `useChessEngine` return shape to match the live hook (`isReady`, `isThinking`, `error`, `searchBestMove`, `evaluatePosition`, `resetEngine`).",
+      "evidence": "The board-component, board-interaction, and game-feature reviews all flagged the nonexistent `web/` directory, and the board-component plus board-interaction reviews flagged that the skill still documents an obsolete hook API that no longer matches `src/hooks/useChessEngine.ts`.",
+      "isSystemic": true
+    },
+    {
+      "target": "frontend-worker skill",
+      "suggestion": "Add a verification fallback for the mission-mandated `3001` dev server: when `pnpm dev --turbopack --port 3001` hits `EADDRINUSE`, confirm the existing process is healthy and reuse it instead of switching ports.",
+      "evidence": "The board-component, engine-play, and game-features reviews each cited worker handoffs where validation hit `EADDRINUSE` on port 3001 and had to reuse an already-running healthy server because alternate ports are disallowed by mission guidance.",
+      "isSystemic": true
+    },
+    {
+      "target": "frontend-worker skill",
+      "suggestion": "Document a frontend-state invariant for draw detection: when UI logic depends on `chess.js` repetition APIs, features must preserve live move history instead of reconstructing game state from the current FEN alone.",
+      "evidence": "The website-engine-play review found a blocking defect where `src/app/page.tsx` rebuilt `new Chess(gameSnapshot.fen)` each render, which dropped repetition state and made threefold-repetition draws impossible despite being part of the feature contract.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "The repeated repo-root command observation from website-board-interaction, website-engine-play, and website-game-features.",
+      "reason": "duplicate of the accepted frontend-worker command-guidance update."
+    },
+    {
+      "observation": "The repeated outdated `useChessEngine` API observation from website-board-interaction.",
+      "reason": "duplicate of the accepted frontend-worker API-guidance update."
+    },
+    {
+      "observation": "The repeated `EADDRINUSE` fallback observation from website-engine-play and website-game-features.",
+      "reason": "duplicate of the accepted port-3001 fallback guidance update."
+    },
+    {
+      "observation": "The website-game-features suggestion to document deterministic finished-game setup for post-game verification.",
+      "reason": "rejected as non-essential validator technique guidance rather than a broadly reusable shared-state rule for the codebase."
+    }
+  ],
+  "previousRound": null
+}
