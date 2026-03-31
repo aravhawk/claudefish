@@ -1,0 +1,126 @@
+.boardShell {
+  width: 100%;
+}
+
+.boardFrame {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: clamp(0.5rem, 1vw, 0.85rem);
+  border-radius: 1.5rem;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(16, 24, 39, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 28px 60px rgba(6, 10, 18, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid rgba(16, 24, 39, 0.4);
+  background: #f0d9b5;
+}
+
+.square {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  user-select: none;
+}
+
+.light {
+  background: #f0d9b5;
+}
+
+.dark {
+  background: #b58863;
+}
+
+.piece {
+  font-size: clamp(1.55rem, 5vw, 3.75rem);
+  line-height: 1;
+  font-family:
+    "Noto Sans Symbols 2",
+    "Apple Symbols",
+    "Segoe UI Symbol",
+    "Arial Unicode MS",
+    serif;
+}
+
+.pieceWhite {
+  color: #fff8ec;
+  text-shadow:
+    -1px -1px 0 rgba(86, 58, 28, 0.4),
+    1px -1px 0 rgba(86, 58, 28, 0.4),
+    -1px 1px 0 rgba(86, 58, 28, 0.4),
+    1px 1px 0 rgba(86, 58, 28, 0.4),
+    0 2px 3px rgba(17, 24, 39, 0.22);
+}
+
+.pieceBlack {
+  color: #24160e;
+  text-shadow:
+    -1px -1px 0 rgba(255, 247, 232, 0.28),
+    1px -1px 0 rgba(255, 247, 232, 0.28),
+    -1px 1px 0 rgba(255, 247, 232, 0.28),
+    1px 1px 0 rgba(255, 247, 232, 0.28),
+    0 2px 3px rgba(17, 24, 39, 0.24);
+}
+
+.rankLabel,
+.fileLabel {
+  position: absolute;
+  font-size: clamp(0.58rem, 1.15vw, 0.8rem);
+  font-weight: 700;
+  text-transform: lowercase;
+  opacity: 0.9;
+}
+
+.rankLabel {
+  top: 0.35rem;
+  left: 0.35rem;
+}
+
+.fileLabel {
+  right: 0.35rem;
+  bottom: 0.28rem;
+}
+
+.light .rankLabel,
+.light .fileLabel {
+  color: rgba(102, 60, 18, 0.9);
+}
+
+.dark .rankLabel,
+.dark .fileLabel {
+  color: rgba(248, 236, 216, 0.95);
+}
+
+@media (max-width: 640px) {
+  .boardFrame {
+    border-radius: 1.1rem;
+    padding: 0.4rem;
+  }
+
+  .board {
+    border-radius: 0.8rem;
+  }
+
+  .rankLabel {
+    top: 0.2rem;
+    left: 0.25rem;
+  }
+
+  .fileLabel {
+    right: 0.25rem;
+    bottom: 0.18rem;
+  }
+}
