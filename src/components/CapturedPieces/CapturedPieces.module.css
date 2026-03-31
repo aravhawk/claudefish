@@ -1,0 +1,100 @@
+.panel {
+  display: grid;
+  gap: 1rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #8bb8ff;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.2rem;
+  color: #f8fbff;
+}
+
+.groups {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.group {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  background: rgba(14, 24, 43, 0.7);
+  border: 1px solid rgba(155, 196, 255, 0.12);
+}
+
+.groupTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #f7fbff;
+}
+
+.groupSubtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #9eb7dc;
+}
+
+.pieceRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  min-height: 2.6rem;
+  align-items: center;
+}
+
+.captureChip {
+  display: inline-grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.85rem;
+  background: rgba(7, 12, 22, 0.7);
+  border: 1px solid rgba(155, 196, 255, 0.12);
+}
+
+.pieceGlyph {
+  font-size: 1.6rem;
+  line-height: 1;
+  font-family:
+    "Noto Sans Symbols 2",
+    "Apple Symbols",
+    "Segoe UI Symbol",
+    "Arial Unicode MS",
+    serif;
+}
+
+.whitePiece {
+  color: #fff8ec;
+  text-shadow:
+    -1px -1px 0 rgba(86, 58, 28, 0.4),
+    1px -1px 0 rgba(86, 58, 28, 0.4),
+    -1px 1px 0 rgba(86, 58, 28, 0.4),
+    1px 1px 0 rgba(86, 58, 28, 0.4),
+    0 2px 3px rgba(17, 24, 39, 0.22);
+}
+
+.blackPiece {
+  color: #24160e;
+  text-shadow:
+    -1px -1px 0 rgba(255, 247, 232, 0.28),
+    1px -1px 0 rgba(255, 247, 232, 0.28),
+    -1px 1px 0 rgba(255, 247, 232, 0.28),
+    1px 1px 0 rgba(255, 247, 232, 0.28),
+    0 2px 3px rgba(17, 24, 39, 0.24);
+}
+
+.emptyState {
+  font-size: 0.88rem;
+  color: #c9d6ee;
+}

@@ -1,51 +1,42 @@
 "use client";
 
 import { Chess, type Move, type PieceSymbol, type Square } from "chess.js";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import Board from "@/components/Board/Board";
+import CapturedPieces from "@/components/CapturedPieces/CapturedPieces";
+import MoveHistory from "@/components/MoveHistory/MoveHistory";
 import { useChessEngine } from "@/hooks/useChessEngine";
 
 import styles from "./page.module.css";
 import {
+  buildMoveHistoryRows,
+  collectCapturedPieces,
   DIFFICULTY_LEVELS,
   formatEvaluationLabel,
   getDifficultyConfig,
   getEvaluationFill,
   getGameResult,
-  getPlayedPlyCount,
+  getUndoPlyCount,
   parseUciMove,
+  replayGame,
   shouldEngineMove,
   toWhiteCentipawns,
   type DifficultyKey,
   type GameResult,
+  type ParsedUciMove,
 } from "./gameUtils";
 
-interface GameSnapshot {
-  fen: string;
-  lastMove: Move | null;
-  result: GameResult | null;
-}
-
 export default function Home() {
-  const { error: engineError, evaluatePosition, isReady, isThinking, searchBestMove } =
-    useChessEngine();
-  const [gameSnapshot, setGameSnapshot] = useState<GameSnapshot>(() => {
-    const game = new Chess();
-
-    return {
-      fen: game.fen(),
-      lastMove: null,
-      result: null,
-    };
-  });
+  const {
+    error: engineError,
+    evaluatePosition,
+    isReady,
+    isThinking,
+    resetEngine,
+    searchBestMove,
+  } = useChessEngine();
+  const [playedMoves, setPlayedMoves] = useState<ParsedUciMove[]>([]);
   const [difficulty, setDifficulty] = useState<DifficultyKey>("medium");
   const [evaluation, setEvaluation] = useState<number | null>(null);
   const [positionError, setPositionError] = useState<string | null>(null);
@@ -53,18 +44,25 @@ export default function Home() {
   const evaluationRequestIdRef = useRef(0);
   const engineSearchIdRef = useRef(0);
 
-  const game = useMemo(() => new Chess(gameSnapshot.fen), [gameSnapshot.fen]);
+  const game = useMemo(() => replayGame(playedMoves), [playedMoves]);
+  const history = useMemo(() => game.history({ verbose: true }) as Move[], [game]);
+  const currentFen = game.fen();
+  const lastMove = history.at(-1) ?? null;
+  const result = getGameResult(game);
+  const historyRows = useMemo(() => buildMoveHistoryRows(history), [history]);
+  const capturedPieces = useMemo(() => collectCapturedPieces(history), [history]);
   const difficultyConfig = getDifficultyConfig(difficulty);
   const evaluationLabel = formatEvaluationLabel(evaluation);
   const evaluationFill = getEvaluationFill(evaluation);
-  const moveCount = getPlayedPlyCount(gameSnapshot.fen);
-  const boardDisabled = !isReady || isThinking || gameSnapshot.result !== null;
+  const moveCount = history.length;
+  const undoPlyCount = getUndoPlyCount(currentFen, moveCount);
+  const boardDisabled = !isReady || isThinking || result !== null;
   const statusLabel = getStatusLabel({
     engineError,
     game,
     isReady,
     isThinking,
-    result: gameSnapshot.result,
+    result,
   });
 
   useEffect(() => {
@@ -79,13 +77,13 @@ export default function Home() {
     const requestId = evaluationRequestIdRef.current + 1;
     evaluationRequestIdRef.current = requestId;
 
-    void evaluatePosition(gameSnapshot.fen)
+    void evaluatePosition(currentFen)
       .then((score) => {
         if (evaluationRequestIdRef.current !== requestId) {
           return;
         }
 
-        setEvaluation(toWhiteCentipawns(score, gameSnapshot.fen));
+        setEvaluation(toWhiteCentipawns(score, currentFen));
         setPositionError(null);
       })
       .catch((error: unknown) => {
@@ -97,19 +95,19 @@ export default function Home() {
           error instanceof Error ? error.message : "Failed to evaluate the current position.",
         );
       });
-  }, [evaluatePosition, gameSnapshot.fen, isReady]);
+  }, [currentFen, evaluatePosition, isReady]);
 
   useEffect(() => {
-    if (!isReady || gameSnapshot.result !== null || !shouldEngineMove(gameSnapshot.fen)) {
+    if (!isReady || result !== null || !shouldEngineMove(currentFen)) {
       return;
     }
 
     const searchId = engineSearchIdRef.current + 1;
-    const currentFen = gameSnapshot.fen;
+    const searchFen = currentFen;
     const currentDifficulty = getDifficultyConfig(difficultyRef.current);
     engineSearchIdRef.current = searchId;
 
-    void searchBestMove(currentFen, currentDifficulty.depth, currentDifficulty.timeMs)
+    void searchBestMove(searchFen, currentDifficulty.depth, currentDifficulty.timeMs)
       .then((bestMoveUci) => {
         if (engineSearchIdRef.current !== searchId) {
           return;
@@ -120,22 +118,20 @@ export default function Home() {
           throw new Error(`Engine returned an invalid move: "${bestMoveUci}"`);
         }
 
-        const nextGame = new Chess(currentFen);
+        const nextGame = new Chess(searchFen);
         const move = nextGame.move(parsedMove);
 
         if (move === null) {
           throw new Error(`Engine returned an illegal move for the current board: "${bestMoveUci}"`);
         }
 
-        setGameSnapshot((currentSnapshot) =>
-          currentSnapshot.fen !== currentFen
-            ? currentSnapshot
-            : {
-                fen: nextGame.fen(),
-                lastMove: move,
-                result: getGameResult(nextGame),
-              },
-        );
+        setPlayedMoves((currentMoves) => {
+          if (replayGame(currentMoves).fen() !== searchFen) {
+            return currentMoves;
+          }
+
+          return [...currentMoves, parsedMove];
+        });
       })
       .catch((error: unknown) => {
         if (engineSearchIdRef.current !== searchId) {
@@ -146,7 +142,22 @@ export default function Home() {
           error instanceof Error ? error.message : "Failed to apply the engine response.",
         );
       });
-  }, [gameSnapshot.fen, gameSnapshot.result, isReady, searchBestMove]);
+  }, [currentFen, isReady, result, searchBestMove]);
+
+  const cancelPendingEngineWork = useCallback(() => {
+    engineSearchIdRef.current += 1;
+    evaluationRequestIdRef.current += 1;
+
+    if (!isThinking) {
+      return;
+    }
+
+    void resetEngine().catch((error: unknown) => {
+      setPositionError(
+        error instanceof Error ? error.message : "Failed to restart the chess engine worker.",
+      );
+    });
+  }, [isThinking, resetEngine]);
 
   const handleMove = ({
     from,
@@ -161,7 +172,7 @@ export default function Home() {
       return;
     }
 
-    const nextGame = new Chess(gameSnapshot.fen);
+    const nextGame = new Chess(currentFen);
     const move = nextGame.move({
       from,
       to,
@@ -172,25 +183,31 @@ export default function Home() {
       return;
     }
 
-    setGameSnapshot({
-      fen: nextGame.fen(),
-      lastMove: move,
-      result: getGameResult(nextGame),
-    });
+    setPlayedMoves((currentMoves) => [
+      ...currentMoves,
+      { from, to, ...(promotion ? { promotion } : {}) },
+    ]);
   };
 
   const handleNewGame = useCallback(() => {
-    const nextGame = new Chess();
-    engineSearchIdRef.current += 1;
-    evaluationRequestIdRef.current += 1;
+    cancelPendingEngineWork();
+    setEvaluation(0);
+    setPositionError(null);
+    setPlayedMoves([]);
+  }, [cancelPendingEngineWork]);
+
+  const handleUndo = useCallback(() => {
+    if (undoPlyCount === 0) {
+      return;
+    }
+
+    cancelPendingEngineWork();
     setEvaluation(null);
     setPositionError(null);
-    setGameSnapshot({
-      fen: nextGame.fen(),
-      lastMove: null,
-      result: null,
-    });
-  }, []);
+    setPlayedMoves((currentMoves) =>
+      currentMoves.slice(0, Math.max(0, currentMoves.length - undoPlyCount)),
+    );
+  }, [cancelPendingEngineWork, undoPlyCount]);
 
   return (
     <main className={styles.page}>
@@ -248,23 +265,49 @@ export default function Home() {
               );
             })}
           </div>
+
+          <div className={styles.controlsBlock}>
+            <div className={styles.selectorHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>Game controls</h2>
+                <p className={styles.sectionCopy}>
+                  Undo rewinds the latest player/engine exchange. If Claudefish is
+                  thinking, the current search is cancelled first.
+                </p>
+              </div>
+              <div className={styles.selectorMeta}>History: {moveCount} ply</div>
+            </div>
+            <div className={styles.controlRow}>
+              <button
+                className={styles.actionButton}
+                disabled={undoPlyCount === 0}
+                onClick={handleUndo}
+                type="button"
+              >
+                Undo
+              </button>
+              <button className={styles.actionButton} onClick={handleNewGame} type="button">
+                New Game
+              </button>
+            </div>
+          </div>
         </section>
 
         <section className={styles.boardColumn}>
-          {gameSnapshot.result !== null ? (
+          {result !== null ? (
             <div
               className={`${styles.panel} ${styles.resultBanner} ${
-                gameSnapshot.result.tone === "win"
+                result.tone === "win"
                   ? styles.resultBannerWin
-                  : gameSnapshot.result.tone === "loss"
+                  : result.tone === "loss"
                     ? styles.resultBannerLoss
                     : styles.resultBannerDraw
               }`}
             >
               <div>
                 <p className={styles.eyebrow}>Game over</p>
-                <h2 className={styles.resultTitle}>{gameSnapshot.result.title}</h2>
-                <p className={styles.resultDetail}>{gameSnapshot.result.detail}</p>
+                <h2 className={styles.resultTitle}>{result.title}</h2>
+                <p className={styles.resultDetail}>{result.detail}</p>
               </div>
               <button className={styles.actionButton} onClick={handleNewGame} type="button">
                 New Game
@@ -275,8 +318,8 @@ export default function Home() {
           <div className={styles.boardStage}>
             <Board
               disabled={boardDisabled}
-              fen={gameSnapshot.fen}
-              lastMove={gameSnapshot.lastMove}
+              fen={currentFen}
+              lastMove={lastMove}
               onMove={handleMove}
             />
             {isThinking ? (
@@ -304,9 +347,7 @@ export default function Home() {
             </div>
             <div>
               <span className={styles.captionLabel}>Last move</span>
-              <span className={styles.captionValue}>
-                {gameSnapshot.lastMove?.san ?? "None yet"}
-              </span>
+              <span className={styles.captionValue}>{lastMove?.san ?? "None yet"}</span>
             </div>
             <div>
               <span className={styles.captionLabel}>Moves played</span>
@@ -318,7 +359,9 @@ export default function Home() {
                 {isReady
                   ? isThinking
                     ? "Searching in the worker thread."
-                    : "Ready for the next move."
+                    : shouldEngineMove(currentFen) && result === null
+                      ? "Awaiting a queued engine reply."
+                      : "Ready for the next move."
                   : "Initializing the WebAssembly engine…"}
               </span>
             </div>
@@ -326,6 +369,14 @@ export default function Home() {
         </section>
 
         <aside className={styles.sideColumn}>
+          <section className={`${styles.panel} ${styles.historyPanel}`}>
+            <MoveHistory rows={historyRows} />
+          </section>
+
+          <section className={`${styles.panel} ${styles.capturePanel}`}>
+            <CapturedPieces captures={capturedPieces} />
+          </section>
+
           <section className={`${styles.panel} ${styles.evalPanel}`}>
             <div className={styles.evalHeader}>
               <div>
@@ -363,36 +414,13 @@ export default function Home() {
             </div>
           </section>
 
-          <section className={`${styles.panel} ${styles.detailPanel}`}>
-            <p className={styles.eyebrow}>Live match</p>
-            <h2 className={styles.sectionTitle}>What&apos;s active now</h2>
-            <dl className={styles.detailList}>
-              <div>
-                <dt>Board lock</dt>
-                <dd>
-                  The board is disabled while Claudefish thinks, then reopens after the
-                  engine move lands.
-                </dd>
-              </div>
-              <div>
-                <dt>Engine response</dt>
-                <dd>
-                  Each legal player move sends the current FEN to the Web Worker with the
-                  selected depth and time limit.
-                </dd>
-              </div>
-              <div>
-                <dt>Endgame handling</dt>
-                <dd>
-                  Checkmate, stalemate, repetition, insufficient material, and 50-move
-                  draws all stop play and surface a result banner.
-                </dd>
-              </div>
-            </dl>
-            {positionError !== null || engineError !== null ? (
+          {positionError !== null || engineError !== null ? (
+            <section className={`${styles.panel} ${styles.detailPanel}`}>
+              <p className={styles.eyebrow}>Engine status</p>
+              <h2 className={styles.sectionTitle}>Attention needed</h2>
               <p className={styles.errorText}>{positionError ?? engineError}</p>
-            ) : null}
-          </section>
+            </section>
+          ) : null}
         </aside>
       </div>
     </main>

@@ -1,4 +1,6 @@
-import { Chess, type PieceSymbol, type Square } from "chess.js";
+import { Chess, type Move, type PieceSymbol, type Square } from "chess.js";
+
+import type { PieceCode } from "@/components/Board/boardUtils";
 
 export const SEARCH_MATE_SCORE = 30000;
 const MATE_DISPLAY_THRESHOLD = 29900;
@@ -48,6 +50,17 @@ export interface GameResult {
   detail: string;
 }
 
+export interface MoveHistoryRow {
+  moveNumber: number;
+  white: string;
+  black: string | null;
+}
+
+export interface CapturedPiecesByColor {
+  white: PieceCode[];
+  black: PieceCode[];
+}
+
 export function getDifficultyConfig(level: DifficultyKey) {
   return (
     DIFFICULTY_LEVELS.find((option) => option.key === level) ?? DIFFICULTY_LEVELS[1]
@@ -71,6 +84,16 @@ export function parseUciMove(move: string): ParsedUciMove | null {
   return parsedMove;
 }
 
+export function replayGame(moves: readonly ParsedUciMove[]): Chess {
+  const game = new Chess();
+
+  for (const move of moves) {
+    game.move(move);
+  }
+
+  return game;
+}
+
 export function getPlayedPlyCount(fen: string): number {
   const fields = fen.split(" ");
   const fullmove = Number(fields[5] ?? "1");
@@ -85,6 +108,14 @@ export function getPlayedPlyCount(fen: string): number {
 
 export function shouldEngineMove(fen: string): boolean {
   return fen.split(" ")[1] === "b";
+}
+
+export function getUndoPlyCount(fen: string, historyLength: number): number {
+  if (historyLength === 0) {
+    return 0;
+  }
+
+  return shouldEngineMove(fen) ? 1 : Math.min(2, historyLength);
 }
 
 export function toWhiteCentipawns(score: number, fen: string): number {
@@ -122,6 +153,41 @@ export function getEvaluationFill(score: number | null): number {
   const normalized = Math.tanh(boundedScore / 450);
 
   return Math.max(0, Math.min(100, 50 + normalized * 50));
+}
+
+export function buildMoveHistoryRows(moves: readonly Pick<Move, "san">[]): MoveHistoryRow[] {
+  const rows: MoveHistoryRow[] = [];
+
+  for (let index = 0; index < moves.length; index += 2) {
+    rows.push({
+      moveNumber: Math.floor(index / 2) + 1,
+      white: moves[index]?.san ?? "",
+      black: moves[index + 1]?.san ?? null,
+    });
+  }
+
+  return rows;
+}
+
+export function collectCapturedPieces(
+  moves: readonly Pick<Move, "captured" | "color">[],
+): CapturedPiecesByColor {
+  return moves.reduce<CapturedPiecesByColor>(
+    (captures, move) => {
+      if (move.captured === undefined) {
+        return captures;
+      }
+
+      const capturedPiece =
+        move.color === "w"
+          ? (move.captured as PieceCode)
+          : (move.captured.toUpperCase() as PieceCode);
+
+      captures[move.color === "w" ? "white" : "black"].push(capturedPiece);
+      return captures;
+    },
+    { white: [], black: [] },
+  );
 }
 
 export function getGameResult(game: Chess): GameResult | null {

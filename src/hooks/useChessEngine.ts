@@ -12,64 +12,77 @@ export function useChessEngine(): UseChessEngineResult {
   const workerRef = useRef<Worker | null>(null);
   const engineRef = useRef<Comlink.Remote<EngineService> | null>(null);
   const mountedRef = useRef(false);
+  const workerSessionIdRef = useRef(0);
   const [isReady, setIsReady] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    mountedRef.current = true;
+  const disposeCurrentWorker = useCallback(() => {
+    const currentEngine = engineRef.current;
+    if (currentEngine !== null) {
+      void currentEngine[Comlink.releaseProxy]();
+    }
 
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    engineRef.current = null;
+  }, []);
+
+  const initializeWorker = useCallback(async () => {
+    const sessionId = workerSessionIdRef.current + 1;
     const worker = new Worker(
       new URL("../workers/chess-engine.worker.ts", import.meta.url),
     );
     const engine = Comlink.wrap<EngineService>(worker);
 
+    workerSessionIdRef.current = sessionId;
     workerRef.current = worker;
     engineRef.current = engine;
 
-    void (async () => {
-      try {
-        setError(null);
-        const status = await engine.initEngine();
+    if (mountedRef.current) {
+      setError(null);
+      setIsReady(false);
+      setIsThinking(false);
+    }
 
-        if (!mountedRef.current) {
-          return;
-        }
+    try {
+      const status = await engine.initEngine();
 
-        if (status !== 0) {
-          throw new Error(`init_engine failed with status ${status}`);
-        }
-
-        setIsReady(true);
-      } catch (initializationError: unknown) {
-        if (!mountedRef.current) {
-          return;
-        }
-
-        setIsReady(false);
-        setError(
-          initializationError instanceof Error
-            ? initializationError.message
-            : "Failed to initialize the chess engine worker.",
-        );
+      if (!mountedRef.current || workerSessionIdRef.current !== sessionId) {
+        return;
       }
-    })();
+
+      if (status !== 0) {
+        throw new Error(`init_engine failed with status ${status}`);
+      }
+
+      setIsReady(true);
+    } catch (initializationError: unknown) {
+      if (!mountedRef.current || workerSessionIdRef.current !== sessionId) {
+        return;
+      }
+
+      setIsReady(false);
+      setError(
+        initializationError instanceof Error
+          ? initializationError.message
+          : "Failed to initialize the chess engine worker.",
+      );
+      disposeCurrentWorker();
+    }
+  }, [disposeCurrentWorker]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    void initializeWorker();
 
     return () => {
       mountedRef.current = false;
       setIsReady(false);
       setIsThinking(false);
-
-      const currentEngine = engineRef.current;
-      if (currentEngine !== null) {
-        void currentEngine[Comlink.releaseProxy]();
-      }
-
-      worker.terminate();
-      workerRef.current = null;
-      engineRef.current = null;
+      disposeCurrentWorker();
     };
-  }, []);
+  }, [disposeCurrentWorker, initializeWorker]);
 
   const requireEngine = useCallback(() => {
     if (engineRef.current === null || workerRef.current === null || !isReady) {
@@ -82,6 +95,7 @@ export function useChessEngine(): UseChessEngineResult {
   const searchBestMove = useCallback<UseChessEngineResult["searchBestMove"]>(
     async (fen, depth, timeMs) => {
       const engine = requireEngine();
+      const sessionId = workerSessionIdRef.current;
 
       if (mountedRef.current) {
         setIsThinking(true);
@@ -99,13 +113,13 @@ export function useChessEngine(): UseChessEngineResult {
         const message =
           searchError instanceof Error ? searchError.message : "Chess engine search failed.";
 
-        if (mountedRef.current) {
+        if (mountedRef.current && workerSessionIdRef.current === sessionId) {
           setError(message);
         }
 
         throw new Error(message);
       } finally {
-        if (mountedRef.current) {
+        if (mountedRef.current && workerSessionIdRef.current === sessionId) {
           setIsThinking(false);
         }
       }
@@ -116,6 +130,7 @@ export function useChessEngine(): UseChessEngineResult {
   const evaluatePosition = useCallback<UseChessEngineResult["evaluatePosition"]>(
     async (fen) => {
       const engine = requireEngine();
+      const sessionId = workerSessionIdRef.current;
 
       if (mountedRef.current) {
         setError(null);
@@ -125,7 +140,7 @@ export function useChessEngine(): UseChessEngineResult {
       if (setPositionStatus !== 0) {
         const evaluationError = new Error(INVALID_FEN_ERROR);
 
-        if (mountedRef.current) {
+        if (mountedRef.current && workerSessionIdRef.current === sessionId) {
           setError(evaluationError.message);
         }
 
@@ -140,7 +155,7 @@ export function useChessEngine(): UseChessEngineResult {
             ? evaluationError.message
             : "Position evaluation failed.";
 
-        if (mountedRef.current) {
+        if (mountedRef.current && workerSessionIdRef.current === sessionId) {
           setError(message);
         }
 
@@ -150,11 +165,21 @@ export function useChessEngine(): UseChessEngineResult {
     [requireEngine],
   );
 
+  const resetEngine = useCallback<UseChessEngineResult["resetEngine"]>(async () => {
+    disposeCurrentWorker();
+    if (!mountedRef.current) {
+      return;
+    }
+
+    await initializeWorker();
+  }, [disposeCurrentWorker, initializeWorker]);
+
   return {
     isReady,
     isThinking,
     error,
     searchBestMove,
     evaluatePosition,
+    resetEngine,
   };
 }

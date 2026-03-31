@@ -4,12 +4,16 @@ import assert from "node:assert/strict";
 import { Chess } from "chess.js";
 
 import {
+  buildMoveHistoryRows,
+  collectCapturedPieces,
   DIFFICULTY_LEVELS,
   formatEvaluationLabel,
   getDifficultyConfig,
   getEvaluationFill,
   getGameResult,
+  getUndoPlyCount,
   parseUciMove,
+  replayGame,
   shouldEngineMove,
   toWhiteCentipawns,
 } from "../src/app/gameUtils.ts";
@@ -74,6 +78,65 @@ test("shouldEngineMove only returns true when it is black to move", () => {
   assert.equal(
     shouldEngineMove("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"),
     true,
+  );
+});
+
+test("replayGame rebuilds the current position from stored moves", () => {
+  const rebuilt = replayGame([
+    { from: "e2", to: "e4" },
+    { from: "e7", to: "e5" },
+    { from: "g1", to: "f3" },
+  ]);
+  const direct = new Chess();
+  direct.move("e4");
+  direct.move("e5");
+  direct.move("Nf3");
+
+  assert.equal(rebuilt.fen(), direct.fen());
+  assert.deepEqual(
+    rebuilt.history({ verbose: true }).map((move) => move.san),
+    ["e4", "e5", "Nf3"],
+  );
+});
+
+test("buildMoveHistoryRows formats SAN moves into numbered pairs", () => {
+  const game = new Chess();
+  game.move("e4");
+  game.move("e5");
+  game.move("Nf3");
+
+  assert.deepEqual(buildMoveHistoryRows(game.history({ verbose: true })), [
+    { moveNumber: 1, white: "e4", black: "e5" },
+    { moveNumber: 2, white: "Nf3", black: null },
+  ]);
+});
+
+test("collectCapturedPieces groups captured material by side", () => {
+  const game = new Chess();
+
+  game.move("e4");
+  game.move("d5");
+  game.move("exd5");
+  game.move("Qxd5");
+
+  assert.deepEqual(collectCapturedPieces(game.history({ verbose: true })), {
+    white: ["p"],
+    black: ["P"],
+  });
+});
+
+test("getUndoPlyCount removes a pending player move or a full move pair", () => {
+  assert.equal(
+    getUndoPlyCount("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", 1),
+    1,
+  );
+  assert.equal(
+    getUndoPlyCount("rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2", 2),
+    2,
+  );
+  assert.equal(
+    getUndoPlyCount("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 0),
+    0,
   );
 });
 

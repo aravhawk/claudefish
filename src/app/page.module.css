@@ -151,6 +151,18 @@
   color: #c9d6ee;
 }
 
+.controlsBlock {
+  display: grid;
+  gap: 0.9rem;
+  padding-top: 0.25rem;
+}
+
+.controlRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .boardColumn {
   display: grid;
   gap: 1rem;
@@ -252,6 +264,11 @@
 .sideColumn {
   display: grid;
   gap: 1rem;
+}
+
+.historyPanel,
+.capturePanel {
+  display: grid;
 }
 
 .evalPanel,
@@ -391,6 +408,13 @@
   box-shadow: 0 16px 26px rgba(8, 13, 23, 0.22);
 }
 
+.actionButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
+
 .errorText {
   margin: 0;
   padding: 0.95rem 1rem;
@@ -425,6 +449,11 @@
   .heroStats,
   .difficultyGrid,
   .boardCaption {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .controlRow {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
 

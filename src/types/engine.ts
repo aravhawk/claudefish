@@ -22,4 +22,5 @@ export interface UseChessEngineResult {
   error: string | null;
   searchBestMove(fen: string, depth: number, timeMs: number): Promise<string>;
   evaluatePosition(fen: string): Promise<number>;
+  resetEngine(): Promise<void>;
 }
