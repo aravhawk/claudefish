@@ -1,0 +1,26 @@
+{
+  "featureId": "website-scrutiny-fixes",
+  "reviewedAt": "2026-03-31T22:22:53.719973Z",
+  "commitId": "e7faad6812061c983fa6a1bf322194ff206dd316",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix feature resolves both prior blocking failures and the three follow-up non-blocking issues. The page now rebuilds the live game from stored moves instead of the latest FEN alone, so chess.js repetition history is preserved for draw detection; the old inline result banner is replaced by a themed board overlay with a New Game action; engine-init errors bypass the loading overlay; pointercancel now clears drag state; and move-history autoscroll now keys off the latest move content so black replies also scroll into view. I did not identify remaining code issues within the reviewed scope.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The shared frontend-worker skill is still out of sync with the actual website workspace and hook API: it tells workers to run `cd web && ...` and shows an obsolete `useChessEngine` interface, while the repo now runs from the root and the hook returns `isReady`, `isThinking`, `error`, `searchBestMove`, `evaluatePosition`, and `resetEngine`.",
+      "evidence": ".factory/skills/frontend-worker/SKILL.md:69-72,98-120,143-171 versus src/hooks/useChessEngine.ts:95-183 and .factory/services.yaml:4-22; the reviewed handoff uses repo-root `pnpm test`, `pnpm typecheck`, and `pnpm lint` commands rather than the skill's `cd web` examples."
+    },
+    {
+      "area": "skills",
+      "observation": "The frontend-worker verification procedure does not currently document a deterministic UI-state setup fallback for endgame-only checks, even though this fix review shows that approach is sometimes necessary to verify overlays when live engine replies are nondeterministic.",
+      "evidence": ".factory/skills/frontend-worker/SKILL.md:94-114 only describes driving the live app with agent-browser, while handoff 2026-03-31T22-18-41-904Z__website-scrutiny-fixes__94ab7c4a-cf8e-4fbf-84fc-c62d06799b43.json:69-77 records a justified deviation that injected a legal Fool's Mate line to verify the overlay deterministically."
+    }
+  ],
+  "addressesFailureFrom": "/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish/.factory/validation/website/scrutiny/synthesis.round1.json",
+  "summary": "Pass. Reviewing the handoff, transcript skeleton, and commit e7faad6812061c983fa6a1bf322194ff206dd316 shows that the current website state resolves the original website-engine-play repetition-history blocker and the website-themes-polish game-over-overlay blocker, while also fixing pointercancel cleanup, move-history autoscroll for black replies, and loading-overlay dismissal on engine init failure."
+}
