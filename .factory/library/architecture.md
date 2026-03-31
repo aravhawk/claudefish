@@ -42,7 +42,7 @@ Emscripten compiles `engine/src/*.c` → `public/engine/engine.js` + `engine.was
 - `get_legal_moves()` — Return list of legal moves in UCI notation
 
 ### Web Worker (`src/workers/chess-engine.worker.ts`)
-- Loads the WASM module via dynamic import of `engine.js`
+- Loads `/engine/engine.js` inside the worker with `importScripts()` and reads the `createChessEngine` factory from the worker global scope
 - Comlink exposes a typed API to the main thread
 - Handles init, position setting, search, and evaluation requests
 
@@ -50,7 +50,7 @@ Emscripten compiles `engine/src/*.c` → `public/engine/engine.js` + `engine.was
 Provides a clean React interface:
 - `isReady` — Whether the WASM module is loaded and initialized
 - `isThinking` — Whether the engine is currently searching
-- `searchBestMove(fen, options)` — Request best move for a position
+- `searchBestMove(fen, depth, timeMs)` — Request best move for a position
 - `evaluatePosition(fen)` — Request static evaluation
 
 ## Next.js Frontend (`src/`)

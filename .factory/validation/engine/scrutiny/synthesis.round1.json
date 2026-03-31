@@ -1,0 +1,141 @@
+{
+  "milestone": "engine",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "nativeTest": {
+      "passed": true,
+      "command": "cd \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish\" && gcc -O2 -o /tmp/claudefish_test engine/src/*.c engine/tests/*.c -lm && /tmp/claudefish_test",
+      "exitCode": 0
+    },
+    "test": {
+      "passed": true,
+      "command": "pnpm --dir \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish\" test",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "pnpm --dir \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish\" typecheck",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "pnpm --dir \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish\" lint",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 10,
+    "passed": 3,
+    "failed": 7,
+    "failedFeatures": [
+      "engine-board-representation",
+      "engine-evaluation",
+      "engine-search",
+      "engine-pruning-extensions",
+      "engine-book-draw-time",
+      "wasm-build-integration",
+      "wasm-worker-api"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "engine-board-representation",
+      "severity": "blocking",
+      "description": "The FEN parser accepts castling-right strings in arbitrary order, but the serializer always rewrites them in canonical `KQkq` order, so some accepted inputs do not round-trip identically."
+    },
+    {
+      "featureId": "engine-evaluation",
+      "severity": "blocking",
+      "description": "`eval_evaluate()` returns a white-centric score while the negamax search consumes it as a side-to-move static eval, producing the wrong sign on black-to-move nodes."
+    },
+    {
+      "featureId": "engine-search",
+      "severity": "blocking",
+      "description": "The mate-in-1 regression coverage does not satisfy `VAL-SEARCH-001` because it omits the required back-rank and smothered-mate motifs."
+    },
+    {
+      "featureId": "engine-pruning-extensions",
+      "severity": "blocking",
+      "description": "Late-move reductions are gated behind `depth >= 5`, so the requested `depth >= 3` behavior is missing."
+    },
+    {
+      "featureId": "engine-pruning-extensions",
+      "severity": "blocking",
+      "description": "Aspiration windows start too late and always fall back to a full-window re-search after the widened retry, which does not match the requested retry flow."
+    },
+    {
+      "featureId": "engine-book-draw-time",
+      "severity": "blocking",
+      "description": "The WASM build uses only the tiny embedded fallback opening book and never consumes the bundled `engine/book/rodent.bin` at runtime."
+    },
+    {
+      "featureId": "engine-book-draw-time",
+      "severity": "blocking",
+      "description": "The public `set_position(fen)` API reparses into a fresh `Position`, resetting repetition history so threefold detection does not work in the documented FEN-only frontend flow."
+    },
+    {
+      "featureId": "wasm-build-integration",
+      "severity": "blocking",
+      "description": "`pnpm test` depends on ignored `public/engine/engine.js` and `public/engine/engine.wasm` artifacts, so the package-level test entrypoint is not self-contained on a clean checkout."
+    },
+    {
+      "featureId": "wasm-worker-api",
+      "severity": "blocking",
+      "description": "The worker bootstrap dynamically imports `/engine/engine.js`, but the Emscripten build still emits CommonJS/AMD-style glue rather than an ES module, so the browser module worker cannot construct the engine."
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Updated `.factory/library/engine-legality.md` to note that make/unmake integrity must also restore `pawn_hash`, `pst_mg`, and `pst_eg` exactly.",
+      "sourceFeature": "engine-evaluation"
+    },
+    {
+      "target": "library",
+      "description": "Updated `.factory/library/engine-book-api.md` to document that the WASM build currently uses the embedded fallback book and that FEN-only `set_position()` flows reset repetition history.",
+      "sourceFeature": "engine-book-draw-time"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "engine-worker skill",
+      "suggestion": "Update engine-worker instructions to use `engine/src/` and `engine/tests/`, the current gcc command from `.factory/services.yaml`, and milestone-scoped expectations instead of assuming every engine task includes perft or root-level `tests/` paths.",
+      "evidence": "The same stale path/command mismatch was reported by reviews for engine-board-representation, engine-move-generation, engine-special-moves-legality, engine-perft-testing, engine-evaluation, engine-search, engine-pruning-extensions, and engine-book-draw-time.",
+      "isSystemic": true
+    },
+    {
+      "target": "integration-worker skill",
+      "suggestion": "Align the WASM integration guidance with the actual runtime requirements: either emit an ES-module Emscripten bundle for module-worker `import()`, or document a classic-worker / `importScripts()` loading path instead of mixing `MODULARIZE` output with browser `import()`.",
+      "evidence": "wasm-worker-api failed scrutiny because the worker imports `/engine/engine.js` as a module even though `scripts/build-engine.sh` still emits CommonJS/AMD-style glue; wasm-build-integration also reported stale integration-worker layout guidance.",
+      "isSystemic": true
+    },
+    {
+      "target": "mission metadata",
+      "suggestion": "Normalize the web-port expectation to 3001 everywhere, including feature verification steps, so workers and reviewers are not split between historical port 3000 references and the current reserved-port policy.",
+      "evidence": "The wasm-build-integration review found `features.json` still pointing validation to port 3000 while `AGENTS.md` and `.factory/services.yaml` require port 3001.",
+      "isSystemic": true
+    },
+    {
+      "target": "worker skill feedback guidance",
+      "suggestion": "Clarify that `skillFeedback.followedProcedure` must reflect the actual transcript order, and require deviations when implementation precedes test creation on TDD-scoped skills.",
+      "evidence": "The engine-search review found `skillFeedback.followedProcedure: true` even though the transcript shows search implementation files were created before `engine/tests/test_search.c`.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "`.factory/library/architecture.md` described move generation as including legality filtering and special moves before the milestone finished.",
+      "reason": "Rejected as ambiguous/stale: the current integrated engine architecture does include those responsibilities, so the earlier staged-feature mismatch is no longer a reliable shared-state correction target."
+    },
+    {
+      "observation": "Mission state should document that frontend package scripts may be absent during engine-only milestones.",
+      "reason": "Rejected as already addressed in the current `.factory/services.yaml`, which now guards missing package scripts for lint/typecheck/test execution."
+    },
+    {
+      "observation": "The shared library should contain a canned corpus of search-regression FENs.",
+      "reason": "Rejected as a good future improvement but not a factual inconsistency discovered in current shared state."
+    }
+  ],
+  "previousRound": null
+}
