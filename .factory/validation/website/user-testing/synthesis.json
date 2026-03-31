@@ -1,0 +1,76 @@
+{
+  "milestone": "website",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 31,
+    "passed": 29,
+    "failed": 0,
+    "blocked": 2
+  },
+  "passedAssertions": [
+    "VAL-BOARD-001",
+    "VAL-BOARD-002",
+    "VAL-BOARD-003",
+    "VAL-BOARD-004",
+    "VAL-BOARD-005",
+    "VAL-BOARD-006",
+    "VAL-BOARD-007",
+    "VAL-BOARD-009",
+    "VAL-CROSS-001",
+    "VAL-CROSS-002",
+    "VAL-CROSS-003",
+    "VAL-CROSS-004",
+    "VAL-CROSS-005",
+    "VAL-FEAT-001",
+    "VAL-FEAT-002",
+    "VAL-FEAT-003",
+    "VAL-FEAT-004",
+    "VAL-FEAT-005",
+    "VAL-FEAT-006",
+    "VAL-FEAT-007",
+    "VAL-FEAT-008",
+    "VAL-FEAT-009",
+    "VAL-FEAT-010",
+    "VAL-THEME-001",
+    "VAL-THEME-002",
+    "VAL-THEME-003",
+    "VAL-THEME-004",
+    "VAL-THEME-005",
+    "VAL-WASM-006"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [
+    {
+      "id": "VAL-BOARD-008",
+      "blockedBy": "Blocked by the lack of a user-surface position editor/FEN loader; repeated real-game setup attempts never reached a promotable white pawn position in bounded validation time.",
+      "sourceFlowReport": ".factory/validation/website/user-testing/flows/g3-special-moves-themes.json"
+    },
+    {
+      "id": "VAL-BOARD-010",
+      "blockedBy": "Blocked by the prerequisite board state: repeated real-user opening lines never produced an adjacent black double-pawn push next to an advanced white pawn with an immediate en-passant capture available.",
+      "sourceFlowReport": ".factory/validation/website/user-testing/flows/g3-special-moves-themes.json"
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": ".factory/library/user-testing.md",
+      "description": "Added website validation setup steps and agent-browser flow-validator isolation guidance for localhost:3001.",
+      "source": "setup"
+    },
+    {
+      "target": ".factory/library/user-testing.md",
+      "description": "Recorded that the public website surface currently lacks a board editor/FEN loader, which can block promotion and en-passant validation unless live play naturally reaches those states.",
+      "source": "flow-report"
+    }
+  ],
+  "flowReports": [
+    ".factory/validation/website/user-testing/flows/g1-initial-load-layout.json",
+    ".factory/validation/website/user-testing/flows/g2-board-interactions.json",
+    ".factory/validation/website/user-testing/flows/g3-special-moves-themes.json",
+    ".factory/validation/website/user-testing/flows/g4-engine-play-lifecycle.json",
+    ".factory/validation/website/user-testing/flows/g5-history-undo-reset.json"
+  ],
+  "previousRound": null,
+  "generatedAt": "2026-03-31T23:04:52.684545+00:00"
+}

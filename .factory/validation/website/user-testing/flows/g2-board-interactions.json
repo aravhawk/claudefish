@@ -1,0 +1,141 @@
+{
+  "groupId": "g2-board-interactions",
+  "testedAt": "2026-03-31T22:40:23.081634+00:00",
+  "isolation": {
+    "appUrl": "http://localhost:3001",
+    "browserSession": "g2-board-interactions",
+    "missionDir": "/Users/aravhawk/.factory/missions/70ca98e6-cb3b-4e1c-9eb9-4d887ed17139",
+    "scope": "Fresh isolated browser session; only in-browser game state was mutated."
+  },
+  "toolsUsed": [
+    "agent-browser"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-BOARD-002",
+      "title": "Drag-and-Drop Movement",
+      "status": "pass",
+      "reason": "Dragging the e2 pawn to e4 moved it to the destination and cleared e2; dragging the queen from h5 to e5 captured the pawn on e5; live drag feedback showed a lifted drag piece with drop shadow while the origin piece was hidden.",
+      "evidence": {
+        "screenshots": [
+          "website/g2-board-interactions/VAL-BOARD-002-before-drag-clean.png",
+          "website/g2-board-interactions/VAL-BOARD-002-drag-feedback-fixed.png",
+          "website/g2-board-interactions/VAL-BOARD-002-after-drag-clean.png",
+          "website/g2-board-interactions/VAL-BOARD-002-before-capture-drag.png",
+          "website/g2-board-interactions/VAL-BOARD-002-after-capture-drag.png"
+        ],
+        "consoleErrors": "none",
+        "runtimeErrors": "none",
+        "observations": [
+          "DOM check after drag move: white pawn present on e4 and absent from e2.",
+          "DOM check after drag capture: white queen present on e5, black pawn removed from e5.",
+          "Live drag inspection: dragPieceExists=true, originOpacity=0, dragFilter included drop-shadow."
+        ]
+      }
+    },
+    {
+      "id": "VAL-BOARD-003",
+      "title": "Click-to-Move",
+      "status": "pass",
+      "reason": "Clicking the g1 knight selected its square, clicking it again deselected it, clicking the d1 queen reselected the active piece, and clicking h5 moved the queen from d1 to h5.",
+      "evidence": {
+        "screenshots": [
+          "website/g2-board-interactions/VAL-BOARD-003-selected-piece.png",
+          "website/g2-board-interactions/VAL-BOARD-003-after-click-move.png"
+        ],
+        "consoleErrors": "none",
+        "runtimeErrors": "none",
+        "observations": [
+          "Selected square box shadow appeared on g1 and cleared after clicking the same piece again.",
+          "Selection transferred from g1 to d1 when the queen was clicked.",
+          "DOM check after move: white queen present on h5 and absent from d1."
+        ]
+      }
+    },
+    {
+      "id": "VAL-BOARD-004",
+      "title": "Legal Move Highlights",
+      "status": "pass",
+      "reason": "Selecting the g1 knight showed the expected L-shaped targets on e2, f3, and h3; selecting the queen on h5 showed distinct capture-ring indicators on capturable squares and dot indicators on quiet moves; indicators cleared on deselect.",
+      "evidence": {
+        "screenshots": [
+          "website/g2-board-interactions/VAL-BOARD-004-knight-highlights.png"
+        ],
+        "consoleErrors": "none",
+        "runtimeErrors": "none",
+        "observations": [
+          "Knight indicator squares: square e2, square f3, square h3.",
+          "Queen selection showed captureIndicator markup on e5 and f7, and moveIndicator markup on g4 and h3.",
+          "Indicator list was empty after deselecting the piece."
+        ]
+      }
+    },
+    {
+      "id": "VAL-BOARD-005",
+      "title": "Illegal Move Rejection",
+      "status": "pass",
+      "reason": "The UI would not move Black's bishop on White's turn, and in the pinned-knight position after a3 d5 a4 e5 d3 Bb4+ Nc3 d4, dragging the pinned knight from c3 to b5 was rejected and the knight remained on c3.",
+      "evidence": {
+        "screenshots": [
+          "website/g2-board-interactions/VAL-BOARD-005-before-illegal-move.png",
+          "website/g2-board-interactions/VAL-BOARD-005-after-illegal-move.png"
+        ],
+        "consoleErrors": "none",
+        "runtimeErrors": "none",
+        "observations": [
+          "Attempting to click square b4 then square a5 left the black bishop on b4 and did not select an opponent piece.",
+          "After the illegal drag attempt, white knight remained on c3 and did not appear on b5.",
+          "Pinned-piece scenario was verified with black bishop on b4 and black pawn on d4 before the illegal drag."
+        ]
+      }
+    },
+    {
+      "id": "VAL-BOARD-006",
+      "title": "Last Move Highlighting",
+      "status": "pass",
+      "reason": "Before White's next move, the previous black move highlighted d5 and d4; after White played a4-a5, the highlight updated to a4 and a5 and the d-file highlight was removed.",
+      "evidence": {
+        "screenshots": [
+          "website/g2-board-interactions/VAL-BOARD-006-before-update.png",
+          "website/g2-board-interactions/VAL-BOARD-006-after-update.png"
+        ],
+        "consoleErrors": "none",
+        "runtimeErrors": "none",
+        "observations": [
+          "Before update, highlighted squares included square d5 and square d4.",
+          "After White's move, highlighted squares were square a4 and square a5 only."
+        ]
+      }
+    },
+    {
+      "id": "VAL-BOARD-007",
+      "title": "Check Indicator",
+      "status": "pass",
+      "reason": "After a3 d5 a4 e5 d3 Bb4+, the e1 king square showed the alarm-style red highlight and the status text reported 'Your king is in check.'; after resolving with Nc3, the e1 highlight cleared.",
+      "evidence": {
+        "screenshots": [
+          "website/g2-board-interactions/VAL-BOARD-007-check-indicator.png",
+          "website/g2-board-interactions/VAL-BOARD-007-check-resolved.png"
+        ],
+        "consoleErrors": "none",
+        "runtimeErrors": "none",
+        "observations": [
+          "Check-state CSS on e1 included the red squareCheck inset box-shadow.",
+          "After Nc3, DOM check showed white knight on c3, black pawn on d4, status returned to 'Your move.', and e1 box shadow was none."
+        ]
+      }
+    }
+  ],
+  "frictions": [
+    {
+      "description": "agent-browser's drag helper did not accept @ref selectors in this session, so drag verification used CSS selectors for committed moves and low-level mouse events for the live drag-feedback capture.",
+      "resolved": true,
+      "resolution": "Used CSS-selector drag for move/capture assertions and re-ran a mouse-driven drag after scrolling the board back into view to capture the lift-effect evidence.",
+      "affectedAssertions": [
+        "VAL-BOARD-002"
+      ]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 6 assigned board-interaction assertions; all 6 passed with screenshot evidence and no console/runtime errors observed."
+}
