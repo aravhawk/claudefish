@@ -7,6 +7,7 @@ int main(void) {
 
     failed += test_board_run();
     failed += test_movegen_run();
+    failed += test_legality_run();
 
     if (failed == 0) {
         printf("PASS: all engine tests passed\n");

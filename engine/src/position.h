@@ -5,6 +5,21 @@
 
 #include "bitboard.h"
 
+enum {
+    POSITION_STATE_STACK_CAPACITY = 2048
+};
+
+typedef struct PositionState {
+    uint8_t castling_rights;
+    int8_t en_passant_sq;
+    uint16_t halfmove_clock;
+    uint16_t fullmove_number;
+    uint64_t zobrist_hash;
+    uint64_t pawn_hash;
+    uint32_t move;
+    uint8_t captured_piece;
+} PositionState;
+
 typedef struct Position {
     Bitboard piece_bitboards[PIECE_BITBOARDS];
     Bitboard occupancy[3];
@@ -16,6 +31,8 @@ typedef struct Position {
     uint16_t fullmove_number;
     uint64_t zobrist_hash;
     uint64_t pawn_hash;
+    PositionState state_stack[POSITION_STATE_STACK_CAPACITY];
+    size_t state_count;
 } Position;
 
 void position_clear(Position *pos);

@@ -67,6 +67,15 @@ void movegen_init(void);
 Bitboard movegen_bishop_attacks(int square, Bitboard occupancy);
 Bitboard movegen_rook_attacks(int square, Bitboard occupancy);
 Bitboard movegen_queen_attacks(int square, Bitboard occupancy);
+Bitboard movegen_pinned_pieces(const Position *pos, Color side);
+bool movegen_is_square_attacked(const Position *pos, int square, Color attacker);
+bool movegen_is_in_check(const Position *pos, Color side);
+bool movegen_make_move(Position *pos, Move move);
+bool movegen_unmake_move(Position *pos);
 void movegen_generate_pseudo_legal(const Position *pos, MoveList *list);
+void movegen_generate_legal(Position *pos, MoveList *list);
+bool movegen_has_legal_moves(Position *pos);
+bool movegen_is_checkmate(Position *pos);
+bool movegen_is_stalemate(Position *pos);
 
 #endif

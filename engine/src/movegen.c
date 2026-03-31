@@ -1,5 +1,7 @@
 #include "movegen.h"
 
+#include "zobrist.h"
+
 Bitboard movegen_knight_attacks[BOARD_SQUARES];
 Bitboard movegen_king_attacks[BOARD_SQUARES];
 Bitboard movegen_pawn_attacks[2][BOARD_SQUARES];
@@ -49,6 +51,59 @@ static const uint64_t bishop_magics[BOARD_SQUARES] = {
     0x810204410C1002A0ULL, 0x8524008088088200ULL, 0x9021200864061800ULL, 0x0800500500208810ULL,
     0x0100080004104400ULL, 0x2460404084084880ULL, 0x004108089020A600ULL, 0x0010900208102420ULL
 };
+
+static const int pin_rank_deltas[8] = { 1, -1, 0, 0, 1, 1, -1, -1 };
+static const int pin_file_deltas[8] = { 0, 0, 1, -1, 1, -1, 1, -1 };
+
+static int movegen_find_king_square(const Position *pos, Color side) {
+    Bitboard king_bitboard;
+
+    if (pos == NULL) {
+        return NO_SQUARE;
+    }
+
+    king_bitboard = pos->piece_bitboards[piece_bitboard_index(make_piece(side, KING))];
+    return bitboard_lsb(king_bitboard);
+}
+
+static Piece movegen_make_promotion_piece(Color side, PieceType promotion_piece) {
+    if (promotion_piece < KNIGHT || promotion_piece > QUEEN) {
+        return NO_PIECE;
+    }
+
+    return make_piece(side, promotion_piece);
+}
+
+static void movegen_update_castling_rights_for_piece(uint8_t *castling_rights, Piece piece, int square) {
+    if (castling_rights == NULL) {
+        return;
+    }
+
+    switch (piece) {
+        case W_KING:
+            *castling_rights &= (uint8_t) ~(CASTLE_WHITE_KINGSIDE | CASTLE_WHITE_QUEENSIDE);
+            break;
+        case B_KING:
+            *castling_rights &= (uint8_t) ~(CASTLE_BLACK_KINGSIDE | CASTLE_BLACK_QUEENSIDE);
+            break;
+        case W_ROOK:
+            if (square == A1) {
+                *castling_rights &= (uint8_t) ~CASTLE_WHITE_QUEENSIDE;
+            } else if (square == H1) {
+                *castling_rights &= (uint8_t) ~CASTLE_WHITE_KINGSIDE;
+            }
+            break;
+        case B_ROOK:
+            if (square == A8) {
+                *castling_rights &= (uint8_t) ~CASTLE_BLACK_QUEENSIDE;
+            } else if (square == H8) {
+                *castling_rights &= (uint8_t) ~CASTLE_BLACK_KINGSIDE;
+            }
+            break;
+        default:
+            break;
+    }
+}
 
 static Bitboard generate_knight_attacks(int square) {
     static const int rank_offsets[8] = { 2, 2, 1, 1, -1, -1, -2, -2 };
@@ -363,6 +418,128 @@ static void init_slider_tables(void) {
     }
 }
 
+bool movegen_is_square_attacked(const Position *pos, int square, Color attacker) {
+    Bitboard attacker_knights;
+    Bitboard attacker_bishops;
+    Bitboard attacker_rooks;
+    Bitboard attacker_queens;
+    Bitboard attacker_king;
+    Bitboard attacker_pawns;
+
+    if (pos == NULL || !square_is_valid(square) || (attacker != WHITE && attacker != BLACK)) {
+        return false;
+    }
+
+    movegen_init();
+
+    attacker_pawns = pos->piece_bitboards[piece_bitboard_index(make_piece(attacker, PAWN))];
+    attacker_knights = pos->piece_bitboards[piece_bitboard_index(make_piece(attacker, KNIGHT))];
+    attacker_bishops = pos->piece_bitboards[piece_bitboard_index(make_piece(attacker, BISHOP))];
+    attacker_rooks = pos->piece_bitboards[piece_bitboard_index(make_piece(attacker, ROOK))];
+    attacker_queens = pos->piece_bitboards[piece_bitboard_index(make_piece(attacker, QUEEN))];
+    attacker_king = pos->piece_bitboards[piece_bitboard_index(make_piece(attacker, KING))];
+
+    if (attacker == WHITE) {
+        if ((movegen_pawn_attacks[BLACK][square] & attacker_pawns) != 0) {
+            return true;
+        }
+    } else {
+        if ((movegen_pawn_attacks[WHITE][square] & attacker_pawns) != 0) {
+            return true;
+        }
+    }
+
+    if ((movegen_knight_attacks[square] & attacker_knights) != 0) {
+        return true;
+    }
+    if ((movegen_bishop_attacks(square, pos->occupancy[BOTH]) & (attacker_bishops | attacker_queens)) != 0) {
+        return true;
+    }
+    if ((movegen_rook_attacks(square, pos->occupancy[BOTH]) & (attacker_rooks | attacker_queens)) != 0) {
+        return true;
+    }
+
+    return (movegen_king_attacks[square] & attacker_king) != 0;
+}
+
+bool movegen_is_in_check(const Position *pos, Color side) {
+    int king_square;
+    Color attacker;
+
+    if (pos == NULL || (side != WHITE && side != BLACK)) {
+        return false;
+    }
+
+    king_square = movegen_find_king_square(pos, side);
+    if (king_square == NO_SQUARE) {
+        return false;
+    }
+
+    attacker = side == WHITE ? BLACK : WHITE;
+    return movegen_is_square_attacked(pos, king_square, attacker);
+}
+
+Bitboard movegen_pinned_pieces(const Position *pos, Color side) {
+    Bitboard pinned = 0;
+    int king_square;
+    int king_rank;
+    int king_file;
+    int direction_index;
+
+    if (pos == NULL || (side != WHITE && side != BLACK)) {
+        return 0;
+    }
+
+    king_square = movegen_find_king_square(pos, side);
+    if (king_square == NO_SQUARE) {
+        return 0;
+    }
+
+    king_rank = bitboard_rank_of(king_square);
+    king_file = bitboard_file_of(king_square);
+
+    for (direction_index = 0; direction_index < 8; ++direction_index) {
+        int rank = king_rank + pin_rank_deltas[direction_index];
+        int file = king_file + pin_file_deltas[direction_index];
+        int candidate_square = NO_SQUARE;
+
+        while (rank >= 0 && rank < 8 && file >= 0 && file < 8) {
+            int square = bitboard_make_square(file, rank);
+            Piece piece = position_get_piece(pos, square);
+
+            if (piece == NO_PIECE) {
+                rank += pin_rank_deltas[direction_index];
+                file += pin_file_deltas[direction_index];
+                continue;
+            }
+
+            if ((Color) piece_color(piece) == side) {
+                if (candidate_square != NO_SQUARE) {
+                    break;
+                }
+
+                candidate_square = square;
+                rank += pin_rank_deltas[direction_index];
+                file += pin_file_deltas[direction_index];
+                continue;
+            }
+
+            if (candidate_square != NO_SQUARE) {
+                bool diagonal = direction_index >= 4;
+                int type = piece_type(piece);
+
+                if ((diagonal && (type == BISHOP || type == QUEEN)) ||
+                    (!diagonal && (type == ROOK || type == QUEEN))) {
+                    pinned |= BITBOARD_FROM_SQUARE(candidate_square);
+                }
+            }
+            break;
+        }
+    }
+
+    return pinned;
+}
+
 static bool move_list_push(MoveList *list, Move move) {
     if (list == NULL || list->count >= MOVEGEN_MAX_MOVES) {
         return false;
@@ -444,6 +621,20 @@ static void generate_pawn_moves(const Position *pos, MoveList *list, Color side_
                 );
             }
         }
+
+        if (pos->en_passant_sq != NO_SQUARE &&
+            (movegen_pawn_attacks[side_to_move][source] & BITBOARD_FROM_SQUARE(pos->en_passant_sq)) != 0) {
+            move_list_push(
+                list,
+                move_encode(
+                    source,
+                    pos->en_passant_sq,
+                    MOVE_FLAG_CAPTURE | MOVE_FLAG_EN_PASSANT,
+                    make_piece(side_to_move == WHITE ? BLACK : WHITE, PAWN),
+                    MOVE_PROMOTION_NONE
+                )
+            );
+        }
     }
 }
 
@@ -483,6 +674,58 @@ static void generate_slider_moves(const Position *pos, MoveList *list, Color sid
         }
 
         move_list_add_regular_moves(pos, list, source, targets & ~own_occupancy);
+    }
+}
+
+static void generate_castling_moves(const Position *pos, MoveList *list, Color side_to_move) {
+    Color enemy = side_to_move == WHITE ? BLACK : WHITE;
+
+    if (movegen_is_in_check(pos, side_to_move)) {
+        return;
+    }
+
+    if (side_to_move == WHITE) {
+        if ((pos->castling_rights & CASTLE_WHITE_KINGSIDE) != 0 &&
+            position_get_piece(pos, E1) == W_KING &&
+            position_get_piece(pos, H1) == W_ROOK &&
+            position_get_piece(pos, F1) == NO_PIECE &&
+            position_get_piece(pos, G1) == NO_PIECE &&
+            !movegen_is_square_attacked(pos, F1, enemy) &&
+            !movegen_is_square_attacked(pos, G1, enemy)) {
+            move_list_push(list, move_encode(E1, G1, MOVE_FLAG_CASTLING, NO_PIECE, MOVE_PROMOTION_NONE));
+        }
+
+        if ((pos->castling_rights & CASTLE_WHITE_QUEENSIDE) != 0 &&
+            position_get_piece(pos, E1) == W_KING &&
+            position_get_piece(pos, A1) == W_ROOK &&
+            position_get_piece(pos, D1) == NO_PIECE &&
+            position_get_piece(pos, C1) == NO_PIECE &&
+            position_get_piece(pos, B1) == NO_PIECE &&
+            !movegen_is_square_attacked(pos, D1, enemy) &&
+            !movegen_is_square_attacked(pos, C1, enemy)) {
+            move_list_push(list, move_encode(E1, C1, MOVE_FLAG_CASTLING, NO_PIECE, MOVE_PROMOTION_NONE));
+        }
+    } else {
+        if ((pos->castling_rights & CASTLE_BLACK_KINGSIDE) != 0 &&
+            position_get_piece(pos, E8) == B_KING &&
+            position_get_piece(pos, H8) == B_ROOK &&
+            position_get_piece(pos, F8) == NO_PIECE &&
+            position_get_piece(pos, G8) == NO_PIECE &&
+            !movegen_is_square_attacked(pos, F8, enemy) &&
+            !movegen_is_square_attacked(pos, G8, enemy)) {
+            move_list_push(list, move_encode(E8, G8, MOVE_FLAG_CASTLING, NO_PIECE, MOVE_PROMOTION_NONE));
+        }
+
+        if ((pos->castling_rights & CASTLE_BLACK_QUEENSIDE) != 0 &&
+            position_get_piece(pos, E8) == B_KING &&
+            position_get_piece(pos, A8) == B_ROOK &&
+            position_get_piece(pos, D8) == NO_PIECE &&
+            position_get_piece(pos, C8) == NO_PIECE &&
+            position_get_piece(pos, B8) == NO_PIECE &&
+            !movegen_is_square_attacked(pos, D8, enemy) &&
+            !movegen_is_square_attacked(pos, C8, enemy)) {
+            move_list_push(list, move_encode(E8, C8, MOVE_FLAG_CASTLING, NO_PIECE, MOVE_PROMOTION_NONE));
+        }
     }
 }
 
@@ -541,4 +784,299 @@ void movegen_generate_pseudo_legal(const Position *pos, MoveList *list) {
     generate_slider_moves(pos, list, side_to_move, ROOK);
     generate_slider_moves(pos, list, side_to_move, QUEEN);
     generate_leaper_moves(pos, list, side_to_move, KING, movegen_king_attacks);
+    generate_castling_moves(pos, list, side_to_move);
+}
+
+bool movegen_make_move(Position *pos, Move move) {
+    PositionState *state;
+    Color side_to_move;
+    Color enemy;
+    int source;
+    int target;
+    int captured_square;
+    Piece moving_piece;
+    Piece captured_piece;
+    Piece target_piece;
+    PieceType promotion_piece;
+    uint8_t flags;
+    uint8_t castling_rights;
+    int8_t en_passant_sq = NO_SQUARE;
+
+    if (pos == NULL || pos->state_count >= POSITION_STATE_STACK_CAPACITY) {
+        return false;
+    }
+
+    source = move_source(move);
+    target = move_target(move);
+    flags = move_flags(move);
+    promotion_piece = move_promotion_piece(move);
+
+    if (!square_is_valid(source) || !square_is_valid(target)) {
+        return false;
+    }
+
+    moving_piece = position_get_piece(pos, source);
+    if (!piece_is_valid(moving_piece)) {
+        return false;
+    }
+
+    side_to_move = (Color) pos->side_to_move;
+    if ((Color) piece_color(moving_piece) != side_to_move) {
+        return false;
+    }
+
+    enemy = side_to_move == WHITE ? BLACK : WHITE;
+    captured_square = target;
+    if ((flags & MOVE_FLAG_EN_PASSANT) != 0) {
+        captured_square = target + (side_to_move == WHITE ? -8 : 8);
+    }
+
+    captured_piece = square_is_valid(captured_square) ? position_get_piece(pos, captured_square) : NO_PIECE;
+    if ((flags & MOVE_FLAG_EN_PASSANT) != 0 && captured_piece != make_piece(enemy, PAWN)) {
+        return false;
+    }
+    if ((flags & MOVE_FLAG_CAPTURE) == 0 && captured_piece != NO_PIECE) {
+        return false;
+    }
+    if ((flags & MOVE_FLAG_CAPTURE) != 0 && captured_piece == NO_PIECE) {
+        return false;
+    }
+
+    state = &pos->state_stack[pos->state_count++];
+    state->castling_rights = pos->castling_rights;
+    state->en_passant_sq = pos->en_passant_sq;
+    state->halfmove_clock = pos->halfmove_clock;
+    state->fullmove_number = pos->fullmove_number;
+    state->zobrist_hash = pos->zobrist_hash;
+    state->pawn_hash = pos->pawn_hash;
+    state->move = move;
+    state->captured_piece = (uint8_t) captured_piece;
+
+    if (pos->en_passant_sq != NO_SQUARE) {
+        pos->zobrist_hash ^= zobrist_en_passant_keys[bitboard_file_of(pos->en_passant_sq)];
+    }
+    pos->zobrist_hash ^= zobrist_castling_keys[pos->castling_rights & 0x0F];
+
+    if (!position_clear_piece(pos, source)) {
+        return false;
+    }
+    if (captured_piece != NO_PIECE && !position_clear_piece(pos, captured_square)) {
+        return false;
+    }
+
+    if ((flags & MOVE_FLAG_CASTLING) != 0) {
+        int rook_from = NO_SQUARE;
+        int rook_to = NO_SQUARE;
+
+        if (moving_piece == W_KING && target == G1) {
+            rook_from = H1;
+            rook_to = F1;
+        } else if (moving_piece == W_KING && target == C1) {
+            rook_from = A1;
+            rook_to = D1;
+        } else if (moving_piece == B_KING && target == G8) {
+            rook_from = H8;
+            rook_to = F8;
+        } else if (moving_piece == B_KING && target == C8) {
+            rook_from = A8;
+            rook_to = D8;
+        } else {
+            return false;
+        }
+
+        if (!position_clear_piece(pos, rook_from) ||
+            !position_set_piece(pos, rook_to, make_piece(side_to_move, ROOK))) {
+            return false;
+        }
+    }
+
+    target_piece = moving_piece;
+    if (promotion_piece != MOVE_PROMOTION_NONE) {
+        target_piece = movegen_make_promotion_piece(side_to_move, promotion_piece);
+        if (!piece_is_valid(target_piece) || piece_type(moving_piece) != PAWN) {
+            return false;
+        }
+    }
+
+    if (!position_set_piece(pos, target, target_piece)) {
+        return false;
+    }
+
+    castling_rights = pos->castling_rights;
+    movegen_update_castling_rights_for_piece(&castling_rights, moving_piece, source);
+    if (captured_piece != NO_PIECE) {
+        movegen_update_castling_rights_for_piece(&castling_rights, captured_piece, captured_square);
+    }
+
+    if ((flags & MOVE_FLAG_DOUBLE_PAWN_PUSH) != 0) {
+        en_passant_sq = (int8_t) (source + (side_to_move == WHITE ? 8 : -8));
+    }
+
+    pos->castling_rights = castling_rights;
+    pos->en_passant_sq = en_passant_sq;
+    pos->halfmove_clock = (piece_type(moving_piece) == PAWN || captured_piece != NO_PIECE)
+        ? 0
+        : (uint16_t) (state->halfmove_clock + 1);
+    pos->fullmove_number = (uint16_t) (state->fullmove_number + (side_to_move == BLACK ? 1 : 0));
+    pos->side_to_move = enemy;
+
+    pos->zobrist_hash ^= zobrist_castling_keys[pos->castling_rights & 0x0F];
+    if (pos->en_passant_sq != NO_SQUARE) {
+        pos->zobrist_hash ^= zobrist_en_passant_keys[bitboard_file_of(pos->en_passant_sq)];
+    }
+    pos->zobrist_hash ^= zobrist_side_key;
+
+    return true;
+}
+
+bool movegen_unmake_move(Position *pos) {
+    PositionState state;
+    Color side_to_move;
+    int source;
+    int target;
+    int captured_square;
+    uint8_t flags;
+    Piece piece_on_target;
+    Piece restored_piece;
+    Piece captured_piece;
+
+    if (pos == NULL || pos->state_count == 0) {
+        return false;
+    }
+
+    state = pos->state_stack[--pos->state_count];
+    source = move_source((Move) state.move);
+    target = move_target((Move) state.move);
+    flags = move_flags((Move) state.move);
+    captured_piece = (Piece) state.captured_piece;
+    side_to_move = pos->side_to_move == WHITE ? BLACK : WHITE;
+
+    if (!square_is_valid(source) || !square_is_valid(target)) {
+        return false;
+    }
+
+    piece_on_target = position_get_piece(pos, target);
+    if (!piece_is_valid(piece_on_target)) {
+        return false;
+    }
+
+    if (!position_clear_piece(pos, target)) {
+        return false;
+    }
+
+    if ((flags & MOVE_FLAG_CASTLING) != 0) {
+        int rook_from = NO_SQUARE;
+        int rook_to = NO_SQUARE;
+
+        if (side_to_move == WHITE && target == G1) {
+            rook_from = H1;
+            rook_to = F1;
+        } else if (side_to_move == WHITE && target == C1) {
+            rook_from = A1;
+            rook_to = D1;
+        } else if (side_to_move == BLACK && target == G8) {
+            rook_from = H8;
+            rook_to = F8;
+        } else if (side_to_move == BLACK && target == C8) {
+            rook_from = A8;
+            rook_to = D8;
+        } else {
+            return false;
+        }
+
+        if (!position_clear_piece(pos, rook_to) ||
+            !position_set_piece(pos, rook_from, make_piece(side_to_move, ROOK))) {
+            return false;
+        }
+    }
+
+    restored_piece = piece_on_target;
+    if (move_promotion_piece((Move) state.move) != MOVE_PROMOTION_NONE) {
+        restored_piece = make_piece(side_to_move, PAWN);
+    }
+
+    if (!position_set_piece(pos, source, restored_piece)) {
+        return false;
+    }
+
+    if (captured_piece != NO_PIECE) {
+        captured_square = target;
+        if ((flags & MOVE_FLAG_EN_PASSANT) != 0) {
+            captured_square = target + (side_to_move == WHITE ? -8 : 8);
+        }
+
+        if (!position_set_piece(pos, captured_square, captured_piece)) {
+            return false;
+        }
+    }
+
+    pos->side_to_move = side_to_move;
+    pos->castling_rights = state.castling_rights;
+    pos->en_passant_sq = state.en_passant_sq;
+    pos->halfmove_clock = state.halfmove_clock;
+    pos->fullmove_number = state.fullmove_number;
+    pos->zobrist_hash = state.zobrist_hash;
+    pos->pawn_hash = state.pawn_hash;
+
+    return true;
+}
+
+void movegen_generate_legal(Position *pos, MoveList *list) {
+    MoveList pseudo_legal;
+    Color side_to_move;
+    size_t index;
+
+    if (list == NULL) {
+        return;
+    }
+
+    list->count = 0;
+
+    if (pos == NULL) {
+        return;
+    }
+
+    side_to_move = (Color) pos->side_to_move;
+    movegen_generate_pseudo_legal(pos, &pseudo_legal);
+
+    for (index = 0; index < pseudo_legal.count; ++index) {
+        Move move = pseudo_legal.moves[index];
+
+        if (!movegen_make_move(pos, move)) {
+            continue;
+        }
+
+        if (!movegen_is_in_check(pos, side_to_move)) {
+            move_list_push(list, move);
+        }
+
+        movegen_unmake_move(pos);
+    }
+}
+
+bool movegen_has_legal_moves(Position *pos) {
+    MoveList list;
+
+    if (pos == NULL) {
+        return false;
+    }
+
+    movegen_generate_legal(pos, &list);
+    return list.count > 0;
+}
+
+bool movegen_is_checkmate(Position *pos) {
+    if (pos == NULL) {
+        return false;
+    }
+
+    return movegen_is_in_check(pos, (Color) pos->side_to_move) && !movegen_has_legal_moves(pos);
+}
+
+bool movegen_is_stalemate(Position *pos) {
+    if (pos == NULL) {
+        return false;
+    }
+
+    return !movegen_is_in_check(pos, (Color) pos->side_to_move) && !movegen_has_legal_moves(pos);
 }
