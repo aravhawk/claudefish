@@ -1,11 +1,11 @@
 {
   "milestone": "engine",
-  "round": 2,
-  "status": "fail",
+  "round": 3,
+  "status": "pass",
   "validatorsRun": {
     "nativeTest": {
       "passed": true,
-      "command": "cd \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish\" && gcc -O2 -o /tmp/claudefish_test engine/src/*.c engine/tests/*.c -lm && /tmp/claudefish_test",
+      "command": "gcc -O2 -o /tmp/claudefish_test \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish\"/engine/src/*.c \"/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish\"/engine/tests/*.c -lm && /tmp/claudefish_test",
       "exitCode": 0
     },
     "test": {
@@ -26,39 +26,26 @@
   },
   "reviewsSummary": {
     "total": 1,
-    "passed": 0,
-    "failed": 1,
-    "failedFeatures": [
-      "engine-scrutiny-fixes"
-    ]
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
   },
-  "blockingIssues": [
-    {
-      "featureId": "engine-scrutiny-fixes",
-      "severity": "blocking",
-      "description": "`engine/src/engine.c` still loses repetition history in the documented frontend flow because `set_position()` only preserves history for identical FENs or one-ply successors, while `search_best_move()` does not advance `engine_position` after returning the engine move. The next frontend `set_position(fen)` therefore arrives two plies later and resets repetition tracking, so threefold detection remains broken across engine turns."
-    }
-  ],
+  "blockingIssues": [],
   "appliedUpdates": [
     {
       "target": "library",
-      "description": "Updated `.factory/library/architecture.md` to reflect that the worker now boots the engine with `importScripts(\"/engine/engine.js\")` and exposes the `searchBestMove(fen, depth, timeMs)` hook signature.",
-      "sourceFeature": "engine-scrutiny-fixes"
-    },
-    {
-      "target": "library",
-      "description": "Updated `.factory/library/engine-book-api.md` to document the embedded `/book.bin` WASM book path and the still-incomplete repetition-history behavior in the frontend `set_position(fen)` flow.",
-      "sourceFeature": "engine-scrutiny-fixes"
+      "description": "Updated `.factory/library/engine-book-api.md` to reflect that `search_best_move()` advances `engine_position`, so the documented frontend `set_position(fen)` → `search_best_move()` → next `set_position(fen)` flow now preserves repetition history and reaches threefold detection.",
+      "sourceFeature": "engine-repetition-history-fix"
     }
   ],
   "suggestedGuidanceUpdates": [
     {
       "target": "integration-worker skill",
       "suggestion": "Document both supported worker-loading strategies for the Emscripten bundle: ES-module `import()` with `-s EXPORT_ES6=1`, and classic-worker `importScripts()` with `createChessEngine` on the worker global scope.",
-      "evidence": "The fix feature intentionally switched to the classic-worker path and recorded that deviation, but `.factory/skills/integration-worker/SKILL.md` still only describes the ES-module import flow.",
+      "evidence": "The live implementation in `src/workers/chess-engine.worker.ts` uses `self.importScripts(\"/engine/engine.js\")`, and the reviewed engine fixes intentionally chose that supported classic-worker path while `.factory/skills/integration-worker/SKILL.md` still only describes the ES-module import flow.",
       "isSystemic": true
     }
   ],
   "rejectedObservations": [],
-  "previousRound": "/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish/.factory/validation/engine/scrutiny/synthesis.round1.json"
+  "previousRound": "/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish/.factory/validation/engine/scrutiny/synthesis.round2.json"
 }
