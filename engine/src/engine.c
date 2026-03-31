@@ -35,6 +35,69 @@ static Move engine_first_legal_move(Position *pos) {
     return legal_moves.count > 0 ? legal_moves.moves[0] : 0;
 }
 
+static void engine_reset_history(Position *pos) {
+    if (pos == NULL) {
+        return;
+    }
+
+    pos->state_count = 0;
+    pos->history_hashes[0] = pos->zobrist_hash;
+    pos->history_count = 1;
+}
+
+static void engine_copy_history(Position *destination, const Position *source) {
+    if (destination == NULL || source == NULL || source->history_count == 0) {
+        return;
+    }
+
+    memcpy(
+        destination->history_hashes,
+        source->history_hashes,
+        source->history_count * sizeof(source->history_hashes[0])
+    );
+    destination->history_count = source->history_count;
+    destination->state_count = 0;
+}
+
+static bool engine_append_current_hash(Position *pos) {
+    if (pos == NULL || pos->history_count >= POSITION_STATE_STACK_CAPACITY + 1) {
+        return false;
+    }
+
+    pos->history_hashes[pos->history_count++] = pos->zobrist_hash;
+    pos->state_count = 0;
+    return true;
+}
+
+static bool engine_position_is_successor(const Position *current, const Position *candidate) {
+    MoveList legal_moves;
+    Position temp;
+    size_t index;
+
+    if (current == NULL || candidate == NULL) {
+        return false;
+    }
+
+    temp = *current;
+    movegen_generate_legal(&temp, &legal_moves);
+
+    for (index = 0; index < legal_moves.count; ++index) {
+        if (!movegen_make_move(&temp, legal_moves.moves[index])) {
+            continue;
+        }
+
+        if (temp.zobrist_hash == candidate->zobrist_hash &&
+            temp.halfmove_clock == candidate->halfmove_clock &&
+            temp.fullmove_number == candidate->fullmove_number) {
+            return true;
+        }
+
+        movegen_unmake_move(&temp);
+    }
+
+    return false;
+}
+
 int init_engine(void) {
     movegen_init();
     eval_init();
@@ -46,6 +109,8 @@ int init_engine(void) {
         return -1;
     }
 
+    engine_reset_history(&engine_position);
+
     engine_set_empty_string(engine_best_move_buffer, sizeof(engine_best_move_buffer));
     engine_set_empty_string(engine_legal_moves_buffer, sizeof(engine_legal_moves_buffer));
     engine_ready = true;
@@ -54,6 +119,8 @@ int init_engine(void) {
 
 int set_position(const char *fen) {
     Position next_position;
+    bool preserve_history = false;
+    bool append_history = false;
 
     if ((!engine_ready && init_engine() != 0) || fen == NULL) {
         return -1;
@@ -61,6 +128,22 @@ int set_position(const char *fen) {
 
     if (!position_from_fen(&next_position, fen)) {
         return -1;
+    }
+
+    if (engine_position.zobrist_hash == next_position.zobrist_hash) {
+        preserve_history = true;
+    } else if (engine_position_is_successor(&engine_position, &next_position)) {
+        preserve_history = true;
+        append_history = true;
+    }
+
+    if (preserve_history) {
+        engine_copy_history(&next_position, &engine_position);
+        if (append_history && !engine_append_current_hash(&next_position)) {
+            engine_reset_history(&next_position);
+        }
+    } else {
+        engine_reset_history(&next_position);
     }
 
     engine_position = next_position;

@@ -230,6 +230,10 @@ bool book_load_file(const char *path) {
 
 bool book_load_default(void) {
 #ifdef __EMSCRIPTEN__
+    if (book_load_file("/book.bin")) {
+        return true;
+    }
+
     return book_load_memory(book_embedded_data, book_embedded_size);
 #else
     static const char *paths[] = {

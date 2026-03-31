@@ -391,6 +391,44 @@ static void test_engine_api_end_to_end(void) {
     }
 }
 
+static void test_set_position_preserves_repetition_history(void) {
+    const char *test_name = "set_position_preserves_repetition_history";
+    const char *moves[] = { "g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8" };
+    Position pos;
+    size_t index;
+
+    ++tests_run;
+
+    expect_int_eq(test_name, init_engine(), 0, "init_engine");
+    expect_true(
+        test_name,
+        parse_position(test_name, "rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &pos),
+        "parse repetition seed position"
+    );
+    expect_int_eq(
+        test_name,
+        set_position("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
+        0,
+        "set initial repetition position"
+    );
+
+    for (index = 0; index < sizeof(moves) / sizeof(moves[0]); ++index) {
+        Move move = find_move_by_uci(&pos, moves[index]);
+        char fen[128];
+
+        expect_true(test_name, move != 0, "expected repetition move to be legal");
+        if (move == 0 || !movegen_make_move(&pos, move)) {
+            failf(test_name, "failed to apply repetition move");
+            return;
+        }
+
+        expect_true(test_name, position_to_fen(&pos, fen, sizeof(fen)), "position_to_fen for repetition sequence");
+        expect_int_eq(test_name, set_position(fen), 0, "set_position for repetition sequence");
+    }
+
+    expect_int_eq(test_name, evaluate_position(), 0, "repetition should evaluate as a draw through set_position");
+}
+
 int test_engine_api_run(void) {
     tests_run = 0;
     tests_failed = 0;
@@ -400,6 +438,7 @@ int test_engine_api_run(void) {
     test_time_management_budgeting();
     test_search_respects_time_limits();
     test_engine_api_end_to_end();
+    test_set_position_preserves_repetition_history();
 
     if (tests_failed == 0) {
         printf("PASS: %d engine API tests passed\n", tests_run);

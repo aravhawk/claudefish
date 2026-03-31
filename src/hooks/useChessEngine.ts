@@ -21,7 +21,6 @@ export function useChessEngine(): UseChessEngineResult {
 
     const worker = new Worker(
       new URL("../workers/chess-engine.worker.ts", import.meta.url),
-      { type: "module" },
     );
     const engine = Comlink.wrap<EngineService>(worker);
 

@@ -228,6 +228,7 @@ bool position_from_fen(Position *pos, const char *fen) {
     const char *cursor;
     int rank = 7;
     int file = 0;
+    uint8_t last_castling_order = 0;
     bool white_king_found = false;
     bool black_king_found = false;
 
@@ -313,26 +314,32 @@ bool position_from_fen(Position *pos, const char *fen) {
         ++cursor;
     } else {
         while (*cursor != '\0' && *cursor != ' ') {
+            uint8_t castling_order = 0;
+
             switch (*cursor) {
                 case 'K':
+                    castling_order = 1;
                     if ((pos->castling_rights & CASTLE_WHITE_KINGSIDE) != 0) {
                         return false;
                     }
                     pos->castling_rights |= CASTLE_WHITE_KINGSIDE;
                     break;
                 case 'Q':
+                    castling_order = 2;
                     if ((pos->castling_rights & CASTLE_WHITE_QUEENSIDE) != 0) {
                         return false;
                     }
                     pos->castling_rights |= CASTLE_WHITE_QUEENSIDE;
                     break;
                 case 'k':
+                    castling_order = 3;
                     if ((pos->castling_rights & CASTLE_BLACK_KINGSIDE) != 0) {
                         return false;
                     }
                     pos->castling_rights |= CASTLE_BLACK_KINGSIDE;
                     break;
                 case 'q':
+                    castling_order = 4;
                     if ((pos->castling_rights & CASTLE_BLACK_QUEENSIDE) != 0) {
                         return false;
                     }
@@ -341,6 +348,12 @@ bool position_from_fen(Position *pos, const char *fen) {
                 default:
                     return false;
             }
+
+            if (castling_order <= last_castling_order) {
+                return false;
+            }
+
+            last_castling_order = castling_order;
             ++cursor;
         }
     }

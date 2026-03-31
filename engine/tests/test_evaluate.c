@@ -163,8 +163,9 @@ static void test_equal_positions_and_symmetry(void) {
     const char *test_name = "equal_positions_and_symmetry";
     int start_score;
     int bare_kings_score;
-    int white_knight_score;
-    int black_knight_score;
+    int white_knight_white_to_move;
+    int black_knight_white_to_move;
+    int white_knight_black_to_move;
 
     ++tests_run;
 
@@ -173,12 +174,24 @@ static void test_equal_positions_and_symmetry(void) {
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     );
     bare_kings_score = evaluate_fen(test_name, "4k3/8/8/8/8/8/8/4K3 w - - 0 1");
-    white_knight_score = evaluate_fen(test_name, "4k3/8/8/3N4/8/8/8/4K3 w - - 0 1");
-    black_knight_score = evaluate_fen(test_name, "4k3/8/8/8/3n4/8/8/4K3 b - - 0 1");
+    white_knight_white_to_move = evaluate_fen(test_name, "4k3/8/8/3N4/8/8/8/4K3 w - - 0 1");
+    black_knight_white_to_move = evaluate_fen(test_name, "4k3/8/8/8/3n4/8/8/4K3 w - - 0 1");
+    white_knight_black_to_move = evaluate_fen(test_name, "4k3/8/8/3N4/8/8/8/4K3 b - - 0 1");
 
     expect_abs_le(test_name, start_score, 50, "starting position score");
     expect_abs_le(test_name, bare_kings_score, 50, "bare kings score");
-    expect_abs_le(test_name, white_knight_score + black_knight_score, 5, "mirrored symmetry sum");
+    expect_abs_le(
+        test_name,
+        white_knight_white_to_move + black_knight_white_to_move,
+        5,
+        "white-to-move mirrored symmetry sum"
+    );
+    expect_abs_le(
+        test_name,
+        white_knight_white_to_move + white_knight_black_to_move,
+        5,
+        "side-to-move relative symmetry sum"
+    );
 }
 
 static void test_material_advantage_scores(void) {
@@ -245,7 +258,7 @@ static void test_terminal_scores(void) {
     checkmate_score = evaluate_fen(test_name, "7k/6Q1/6K1/8/8/8/8/8 b - - 0 1");
     stalemate_score = evaluate_fen(test_name, "7k/5Q2/6K1/8/8/8/8/8 b - - 0 1");
 
-    expect_int_eq(test_name, checkmate_score, EVAL_MATE_SCORE, "checkmate score");
+    expect_int_eq(test_name, checkmate_score, -EVAL_MATE_SCORE, "checkmate score");
     expect_int_eq(test_name, stalemate_score, 0, "stalemate score");
 }
 

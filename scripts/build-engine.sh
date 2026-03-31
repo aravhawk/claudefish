@@ -21,14 +21,15 @@ emcc "$ENGINE_DIR"/*.c \
   -s EXPORT_NAME=createChessEngine \
   -s ASSERTIONS=1 \
   -s EXPORTED_FUNCTIONS='["_init_engine","_set_position","_search_best_move","_evaluate_position","_get_legal_moves"]' \
-  -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString"]' \
+  -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","FS"]' \
   -s ENVIRONMENT=web,worker \
   -s ALLOW_MEMORY_GROWTH=1 \
   -s INITIAL_MEMORY=16777216 \
   -s MAXIMUM_MEMORY=268435456 \
   -s STACK_SIZE=1048576 \
   -s NO_EXIT_RUNTIME=1 \
-  -s FILESYSTEM=0 \
+  -s FORCE_FILESYSTEM=1 \
+  --embed-file "$PROJECT_DIR/engine/book/rodent.bin@/book.bin" \
   --no-entry \
   -o "$OUTPUT_DIR/engine.js"
 

@@ -7,6 +7,7 @@
     "build": "next build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "pretest": "test -f public/engine/engine.js -a -f public/engine/engine.wasm || (. ./emsdk/emsdk_env.sh && ./scripts/build-engine.sh)",
     "test": "node --test tests/check-wasm-artifacts.test.mjs"
   },
   "dependencies": {

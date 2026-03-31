@@ -272,6 +272,26 @@ int search_mate_distance(int score) {
     return (plies + 1) / 2;
 }
 
+int search_debug_lmr_reduction(int depth, int move_count) {
+    if (!search_initialized) {
+        search_init();
+    }
+
+    if (depth < 0) {
+        depth = 0;
+    } else if (depth > SEARCH_MAX_DEPTH) {
+        depth = SEARCH_MAX_DEPTH;
+    }
+
+    if (move_count < 0) {
+        move_count = 0;
+    } else if (move_count > MOVEGEN_MAX_MOVES) {
+        move_count = MOVEGEN_MAX_MOVES;
+    }
+
+    return search_lmr_table[depth][move_count];
+}
+
 void search_init(void) {
     movegen_init();
     eval_init();
@@ -627,7 +647,7 @@ static int search_negamax(
             !pv_node &&
             !first_move &&
             !in_check &&
-            depth >= 5 &&
+            depth >= 3 &&
             move_number > 3 &&
             quiet_move &&
             !gives_check &&
@@ -749,18 +769,29 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
         int pv_length;
         int score;
 
-        if (search_options.enable_aspiration_windows && have_previous_score && depth >= 5) {
-            int alpha = previous_score - 50;
-            int beta = previous_score + 50;
+        if (search_options.enable_aspiration_windows && have_previous_score && depth >= 4) {
+            const int aspiration_margins[] = { 50, 200 };
+            bool resolved = false;
+            size_t margin_index;
 
-            score = search_negamax(pos, &ctx, depth, alpha, beta, 0, true);
-            if (!ctx.stop && (score <= alpha || score >= beta)) {
-                alpha = previous_score - 200;
-                beta = previous_score + 200;
+            score = previous_score;
+            for (margin_index = 0; margin_index < sizeof(aspiration_margins) / sizeof(aspiration_margins[0]); ++margin_index) {
+                int alpha = previous_score - aspiration_margins[margin_index];
+                int beta = previous_score + aspiration_margins[margin_index];
+
                 score = search_negamax(pos, &ctx, depth, alpha, beta, 0, true);
-                if (!ctx.stop) {
-                    score = search_negamax(pos, &ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true);
+                if (ctx.stop) {
+                    break;
                 }
+
+                if (score > alpha && score < beta) {
+                    resolved = true;
+                    break;
+                }
+            }
+
+            if (!ctx.stop && !resolved) {
+                score = search_negamax(pos, &ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true);
             }
         } else {
             score = search_negamax(pos, &ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true);

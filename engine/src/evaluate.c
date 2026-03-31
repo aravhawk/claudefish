@@ -716,7 +716,7 @@ int eval_evaluate(Position *pos) {
     eval_init();
 
     if (movegen_is_checkmate(pos)) {
-        return pos->side_to_move == WHITE ? -EVAL_MATE_SCORE : EVAL_MATE_SCORE;
+        return -EVAL_MATE_SCORE;
     }
 
     if (movegen_is_stalemate(pos)) {
@@ -746,7 +746,7 @@ int eval_evaluate(Position *pos) {
     score = ((mg_score * phase) + (eg_score * (256 - phase))) / 256;
     score += pos->side_to_move == WHITE ? EVAL_TEMPO_BONUS : -EVAL_TEMPO_BONUS;
 
-    return score;
+    return pos->side_to_move == WHITE ? score : -score;
 }
 
 void eval_reset_pawn_hash_table(void) {

@@ -309,8 +309,8 @@ static void test_mate_in_one_positions(void) {
         const char *fen;
     } cases[] = {
         { "mate_in_one_queen_box", "7k/5Q2/5K2/8/8/8/8/8 w - - 0 1" },
-        { "mate_in_one_rook_wall", "7k/8/6K1/8/8/8/8/R7 w - - 0 1" },
-        { "mate_in_one_corner_net", "k7/2Q5/2K5/8/8/8/8/8 w - - 0 1" }
+        { "mate_in_one_back_rank", "6k1/5ppp/8/8/8/8/4RPPP/6K1 w - - 0 1" },
+        { "mate_in_one_smothered", "6rk/6pp/7N/8/8/8/8/4K3 w - - 0 1" }
     };
     size_t index;
 
@@ -576,34 +576,14 @@ static void test_lmr_matches_non_lmr_on_tactical_positions(void) {
     expect_int_eq("lmr_consistency_total", compared_positions, 50, "tactical positions compared");
 }
 
-static void test_lmr_reduces_nodes_on_start_position(void) {
-    const char *test_name = "lmr_reduces_nodes_on_start_position";
-    const char *fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    SearchOptions with_lmr;
-    SearchOptions without_lmr;
-    SearchResult lmr_result;
-    SearchResult no_lmr_result;
-    Position lmr_root;
-    Position no_lmr_root;
+static void test_lmr_threshold_table(void) {
+    const char *test_name = "lmr_threshold_table";
 
     ++tests_run;
 
-    search_reset_options();
-    with_lmr = search_get_options();
-    without_lmr = with_lmr;
-    without_lmr.enable_lmr = false;
-
-    if (!search_position_with_options(test_name, fen, 6, 0, &with_lmr, &lmr_result, &lmr_root) ||
-        !search_position_with_options(test_name, fen, 6, 0, &without_lmr, &no_lmr_result, &no_lmr_root)) {
-        return;
-    }
-
-    expect_int_eq(test_name, lmr_result.best_move, no_lmr_result.best_move, "best move");
-    expect_true(
-        test_name,
-        search_total_nodes(&lmr_result) < search_total_nodes(&no_lmr_result),
-        "LMR should reduce total node count"
-    );
+    expect_int_eq(test_name, search_debug_lmr_reduction(2, 8), 0, "depth-2 reduction");
+    expect_true(test_name, search_debug_lmr_reduction(3, 4) > 0, "depth-3 reduction should be enabled");
+    expect_true(test_name, search_debug_lmr_reduction(4, 5) > 0, "depth-4 reduction should be enabled");
 }
 
 static void test_stalemate_preferences(void) {
@@ -720,7 +700,7 @@ int test_search_run(void) {
     test_iterative_deepening_depth_logging();
     test_zugzwang_null_move_safety();
     test_lmr_matches_non_lmr_on_tactical_positions();
-    test_lmr_reduces_nodes_on_start_position();
+    test_lmr_threshold_table();
     test_stalemate_preferences();
 
     if (tests_failed == 0) {

@@ -1,3 +1,5 @@
+import EngineWorkerProbe from "./EngineWorkerProbe";
+
 const setupSteps = [
   "Next.js App Router scaffold with strict TypeScript and ESLint",
   "Emscripten build output served from public/engine",
@@ -19,6 +21,7 @@ export default function Home() {
             <li key={step}>{step}</li>
           ))}
         </ul>
+        <EngineWorkerProbe />
       </section>
     </main>
   );

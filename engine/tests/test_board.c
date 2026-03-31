@@ -188,6 +188,25 @@ static void test_all_castling_right_combinations(void) {
     }
 }
 
+static void test_non_canonical_castling_rights_are_rejected(void) {
+    const char *test_name = "non_canonical_castling_rights_are_rejected";
+    const char *fens[] = {
+        "4k3/8/8/8/8/8/8/4K3 w QK - 0 1",
+        "4k3/8/8/8/8/8/8/4K3 w qk - 0 1",
+        "4k3/8/8/8/8/8/8/4K3 w kQ - 0 1",
+        "4k3/8/8/8/8/8/8/4K3 w qK - 0 1"
+    };
+    size_t index;
+
+    ++tests_run;
+
+    for (index = 0; index < sizeof(fens) / sizeof(fens[0]); ++index) {
+        Position pos;
+
+        expect_true(test_name, !position_from_fen(&pos, fens[index]), "non-canonical castling rights should be invalid");
+    }
+}
+
 static void test_en_passant_roundtrip_positions(void) {
     const char *test_name = "en_passant_roundtrip_positions";
     const char *fens[] = {
@@ -300,6 +319,7 @@ int test_board_run(void) {
     test_starting_position_layout();
     test_fen_roundtrip_known_positions();
     test_all_castling_right_combinations();
+    test_non_canonical_castling_rights_are_rejected();
     test_en_passant_roundtrip_positions();
     test_hash_consistency_after_piece_updates();
     test_hashes_reflect_non_board_state();

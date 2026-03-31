@@ -57,5 +57,6 @@ int search_extract_pv(Position *pos, int max_depth, Move *pv_out, int pv_capacit
 bool search_move_to_uci(Move move, char buffer[6]);
 bool search_is_mate_score(int score);
 int search_mate_distance(int score);
+int search_debug_lmr_reduction(int depth, int move_count);
 
 #endif

@@ -23,6 +23,10 @@ type CreateChessEngineModule = (
   options: CreateChessEngineOptions,
 ) => Promise<EmscriptenModule>;
 
+declare const self: DedicatedWorkerGlobalScope & {
+  createChessEngine?: CreateChessEngineModule;
+};
+
 interface EngineBindings {
   initEngine(): number;
   setPosition(fen: string): number;
@@ -46,11 +50,15 @@ function queueOperation<TResult>(operation: () => Promise<TResult>): Promise<TRe
 }
 
 async function loadModule(): Promise<EmscriptenModule> {
-  // @ts-expect-error Runtime import from /public; resolved by the browser, not TypeScript.
-  const engineModuleImport = await import(/* webpackIgnore: true */ "/engine/engine.js");
-  const createChessEngine = (
-    engineModuleImport.default ?? engineModuleImport
-  ) as CreateChessEngineModule;
+  if (typeof self.createChessEngine !== "function") {
+    self.importScripts("/engine/engine.js");
+  }
+
+  const createChessEngine = self.createChessEngine as CreateChessEngineModule | undefined;
+
+  if (typeof createChessEngine !== "function") {
+    throw new Error("createChessEngine was not loaded into the worker global scope.");
+  }
 
   return createChessEngine({
     locateFile(path) {

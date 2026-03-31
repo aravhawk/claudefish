@@ -4,6 +4,7 @@ import test from "node:test";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { Chess } from "chess.js";
 
 const require = createRequire(import.meta.url);
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -21,6 +22,8 @@ const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const CASTLING_FEN = "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1";
 const PROMOTION_FEN = "6k1/4P3/8/8/8/8/8/6K1 w - - 0 1";
 const MEMORY_TEST_FEN = "4k3/8/3p4/3P4/3K4/8/8/8 w - - 0 1";
+const REPETITION_START_FEN = "rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+const REPETITION_MOVES = ["g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1", "f6g8"];
 
 function setGlobalProperty(name, value) {
   Object.defineProperty(globalThis, name, {
@@ -137,6 +140,14 @@ test("engine module initializes successfully in a Node.js test context", async (
   assert.equal(engineModule._init_engine(), 0, "init_engine should return success");
 });
 
+test("embedded Polyglot book is available in the WASM runtime", async () => {
+  const { engineModule } = await instantiateEngine();
+  const bookBytes = engineModule.FS?.readFile?.("/book.bin");
+
+  assert.ok(bookBytes instanceof Uint8Array, "book.bin should be readable from the embedded filesystem");
+  assert.ok(bookBytes.length > 2_000_000, `expected real opening book data, got ${bookBytes.length} bytes`);
+});
+
 test("engine API returns the expected types and move count", async () => {
   const { engineModule } = await instantiateEngine();
   const api = createEngineApi(engineModule);
@@ -190,6 +201,28 @@ test("sequential searches produce valid UCI moves", async () => {
       `search_best_move should return a UCI move for ${fen}`,
     );
   }
+});
+
+test("FEN-only set_position flow preserves repetition history", async () => {
+  const { engineModule } = await instantiateEngine();
+  const api = createEngineApi(engineModule);
+  const game = new Chess(REPETITION_START_FEN);
+
+  assert.equal(api.initEngine(), 0, "init_engine should succeed");
+  assert.equal(api.setPosition(REPETITION_START_FEN), 0, "initial imbalanced position should be valid");
+
+  for (const move of REPETITION_MOVES) {
+    const playedMove = game.move({
+      from: move.slice(0, 2),
+      to: move.slice(2, 4),
+      ...(move.length === 5 ? { promotion: move[4] } : {}),
+    });
+
+    assert.ok(playedMove, `move ${move} should be legal in the repetition sequence`);
+    assert.equal(api.setPosition(game.fen()), 0, `set_position should accept repetition FEN ${game.fen()}`);
+  }
+
+  assert.equal(api.evaluatePosition(), 0, "repetition through set_position should be scored as a draw");
 });
 
 test("castling and promotion moves use UCI format", async () => {

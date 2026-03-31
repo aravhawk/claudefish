@@ -802,7 +802,9 @@ bool movegen_make_move(Position *pos, Move move) {
     uint8_t castling_rights;
     int8_t en_passant_sq = NO_SQUARE;
 
-    if (pos == NULL || pos->state_count >= POSITION_STATE_STACK_CAPACITY) {
+    if (pos == NULL ||
+        pos->state_count >= POSITION_STATE_STACK_CAPACITY ||
+        pos->history_count >= POSITION_STATE_STACK_CAPACITY + 1) {
         return false;
     }
 
@@ -925,8 +927,7 @@ bool movegen_make_move(Position *pos, Move move) {
         pos->zobrist_hash ^= zobrist_en_passant_keys[bitboard_file_of(pos->en_passant_sq)];
     }
     pos->zobrist_hash ^= zobrist_side_key;
-    pos->history_hashes[pos->state_count] = pos->zobrist_hash;
-    pos->history_count = pos->state_count + 1;
+    pos->history_hashes[pos->history_count++] = pos->zobrist_hash;
 
     return true;
 }
@@ -935,7 +936,9 @@ bool movegen_make_null_move(Position *pos) {
     PositionState *state;
     Color side_to_move;
 
-    if (pos == NULL || pos->state_count >= POSITION_STATE_STACK_CAPACITY) {
+    if (pos == NULL ||
+        pos->state_count >= POSITION_STATE_STACK_CAPACITY ||
+        pos->history_count >= POSITION_STATE_STACK_CAPACITY + 1) {
         return false;
     }
 
@@ -960,8 +963,7 @@ bool movegen_make_null_move(Position *pos) {
     pos->fullmove_number = (uint16_t) (pos->fullmove_number + (side_to_move == BLACK ? 1 : 0));
     pos->side_to_move = side_to_move == WHITE ? BLACK : WHITE;
     pos->zobrist_hash ^= zobrist_side_key;
-    pos->history_hashes[pos->state_count] = pos->zobrist_hash;
-    pos->history_count = pos->state_count + 1;
+    pos->history_hashes[pos->history_count++] = pos->zobrist_hash;
 
     return true;
 }
@@ -1054,8 +1056,10 @@ bool movegen_unmake_move(Position *pos) {
     pos->fullmove_number = state.fullmove_number;
     pos->zobrist_hash = state.zobrist_hash;
     pos->pawn_hash = state.pawn_hash;
-    pos->history_hashes[pos->state_count] = pos->zobrist_hash;
-    pos->history_count = pos->state_count + 1;
+    if (pos->history_count > 1) {
+        --pos->history_count;
+    }
+    pos->history_hashes[pos->history_count - 1] = pos->zobrist_hash;
 
     return true;
 }
@@ -1075,8 +1079,10 @@ bool movegen_unmake_null_move(Position *pos) {
     pos->fullmove_number = state.fullmove_number;
     pos->zobrist_hash = state.zobrist_hash;
     pos->pawn_hash = state.pawn_hash;
-    pos->history_hashes[pos->state_count] = pos->zobrist_hash;
-    pos->history_count = pos->state_count + 1;
+    if (pos->history_count > 1) {
+        --pos->history_count;
+    }
+    pos->history_hashes[pos->history_count - 1] = pos->zobrist_hash;
 
     return true;
 }
