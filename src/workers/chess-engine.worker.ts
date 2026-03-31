@@ -1,0 +1,162 @@
+/// <reference lib="webworker" />
+
+import * as Comlink from "comlink";
+
+import type { EngineService } from "@/types/engine";
+
+type EmscriptenArgType = "array" | "boolean" | "number" | "string";
+type EmscriptenReturnType = "number" | "string" | null;
+
+interface EmscriptenModule {
+  cwrap<TArgs extends readonly unknown[], TResult>(
+    ident: string,
+    returnType: EmscriptenReturnType,
+    argTypes: readonly EmscriptenArgType[],
+  ): (...args: TArgs) => TResult;
+}
+
+interface CreateChessEngineOptions {
+  locateFile(path: string, prefix: string): string;
+}
+
+type CreateChessEngineModule = (
+  options: CreateChessEngineOptions,
+) => Promise<EmscriptenModule>;
+
+interface EngineBindings {
+  initEngine(): number;
+  setPosition(fen: string): number;
+  searchBestMove(depth: number, timeMs: number): string;
+  evaluatePosition(): number;
+  getLegalMovesCsv(): string;
+}
+
+let bindingsPromise: Promise<EngineBindings> | null = null;
+let initializationPromise: Promise<void> | null = null;
+let isReady = false;
+let operationQueue: Promise<void> = Promise.resolve();
+
+function queueOperation<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+  const nextOperation = operationQueue.then(operation, operation);
+  operationQueue = nextOperation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return nextOperation;
+}
+
+async function loadModule(): Promise<EmscriptenModule> {
+  // @ts-expect-error Runtime import from /public; resolved by the browser, not TypeScript.
+  const engineModuleImport = await import(/* webpackIgnore: true */ "/engine/engine.js");
+  const createChessEngine = (
+    engineModuleImport.default ?? engineModuleImport
+  ) as CreateChessEngineModule;
+
+  return createChessEngine({
+    locateFile(path) {
+      return `/engine/${path}`;
+    },
+  });
+}
+
+function createBindings(module: EmscriptenModule): EngineBindings {
+  return {
+    initEngine: module.cwrap<[], number>("init_engine", "number", []),
+    setPosition: module.cwrap<[string], number>("set_position", "number", ["string"]),
+    searchBestMove: module.cwrap<[number, number], string>("search_best_move", "string", [
+      "number",
+      "number",
+    ]),
+    evaluatePosition: module.cwrap<[], number>("evaluate_position", "number", []),
+    getLegalMovesCsv: module.cwrap<[], string>("get_legal_moves", "string", []),
+  };
+}
+
+async function ensureBindings(): Promise<EngineBindings> {
+  if (bindingsPromise === null) {
+    bindingsPromise = loadModule()
+      .then((module) => createBindings(module))
+      .catch((error: unknown) => {
+        bindingsPromise = null;
+        throw error;
+      });
+  }
+
+  return bindingsPromise;
+}
+
+async function ensureInitialized(): Promise<EngineBindings> {
+  const bindings = await ensureBindings();
+
+  if (isReady) {
+    return bindings;
+  }
+
+  if (initializationPromise === null) {
+    initializationPromise = (async () => {
+      const status = bindings.initEngine();
+      if (status !== 0) {
+        throw new Error(`init_engine failed with status ${status}`);
+      }
+      isReady = true;
+    })().catch((error: unknown) => {
+      isReady = false;
+      initializationPromise = null;
+      throw error;
+    });
+  }
+
+  await initializationPromise;
+  return bindings;
+}
+
+function parseLegalMoves(movesCsv: string): string[] {
+  if (movesCsv.length === 0) {
+    return [];
+  }
+
+  return movesCsv.split(",").filter((move) => move.length > 0);
+}
+
+const engineService: EngineService = {
+  async initEngine() {
+    return queueOperation(async () => {
+      await ensureInitialized();
+      return 0;
+    });
+  },
+
+  async isReady() {
+    return isReady;
+  },
+
+  async setPosition(fen: string) {
+    return queueOperation(async () => {
+      const bindings = await ensureInitialized();
+      return bindings.setPosition(fen);
+    });
+  },
+
+  async searchBestMove(depth: number, timeMs: number) {
+    return queueOperation(async () => {
+      const bindings = await ensureInitialized();
+      return bindings.searchBestMove(depth, timeMs);
+    });
+  },
+
+  async evaluatePosition() {
+    return queueOperation(async () => {
+      const bindings = await ensureInitialized();
+      return bindings.evaluatePosition();
+    });
+  },
+
+  async getLegalMoves() {
+    return queueOperation(async () => {
+      const bindings = await ensureInitialized();
+      return parseLegalMoves(bindings.getLegalMovesCsv());
+    });
+  },
+};
+
+Comlink.expose(engineService);
