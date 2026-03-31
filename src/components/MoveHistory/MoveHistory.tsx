@@ -12,6 +12,10 @@ interface MoveHistoryProps {
 
 export default function MoveHistory({ rows }: MoveHistoryProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const latestMoveKey =
+    rows.length === 0
+      ? "empty"
+      : `${rows.at(-1)?.moveNumber ?? 0}:${rows.at(-1)?.white ?? ""}:${rows.at(-1)?.black ?? ""}`;
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -20,7 +24,7 @@ export default function MoveHistory({ rows }: MoveHistoryProps) {
     }
 
     container.scrollTop = container.scrollHeight;
-  }, [rows.length]);
+  }, [latestMoveKey]);
 
   return (
     <section className={styles.panel}>

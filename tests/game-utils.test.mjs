@@ -14,6 +14,7 @@ import {
   getUndoPlyCount,
   parseUciMove,
   replayGame,
+  shouldShowLoadingOverlay,
   shouldEngineMove,
   toWhiteCentipawns,
 } from "../src/app/gameUtils.ts";
@@ -81,6 +82,25 @@ test("shouldEngineMove only returns true when it is black to move", () => {
   );
 });
 
+test("shouldShowLoadingOverlay hides the loader when engine initialization fails", () => {
+  assert.equal(
+    shouldShowLoadingOverlay({
+      engineError: null,
+      isReady: false,
+      loadingDismissed: false,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldShowLoadingOverlay({
+      engineError: "worker init failed",
+      isReady: false,
+      loadingDismissed: false,
+    }),
+    false,
+  );
+});
+
 test("replayGame rebuilds the current position from stored moves", () => {
   const rebuilt = replayGame([
     { from: "e2", to: "e4" },
@@ -97,6 +117,22 @@ test("replayGame rebuilds the current position from stored moves", () => {
     rebuilt.history({ verbose: true }).map((move) => move.san),
     ["e4", "e5", "Nf3"],
   );
+});
+
+test("replayGame preserves repetition history from the stored move list", () => {
+  const repeatedGame = replayGame([
+    { from: "g1", to: "f3" },
+    { from: "g8", to: "f6" },
+    { from: "f3", to: "g1" },
+    { from: "f6", to: "g8" },
+    { from: "g1", to: "f3" },
+    { from: "g8", to: "f6" },
+    { from: "f3", to: "g1" },
+    { from: "f6", to: "g8" },
+  ]);
+
+  assert.equal(repeatedGame.isThreefoldRepetition(), true);
+  assert.equal(getGameResult(repeatedGame)?.title, "Threefold repetition — Draw");
 });
 
 test("buildMoveHistoryRows formats SAN moves into numbered pairs", () => {

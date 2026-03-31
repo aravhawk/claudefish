@@ -258,6 +258,32 @@ export default function Board({
       return undefined;
     }
 
+    const finishDrag = (
+      activeDrag: DragState,
+      destinationSquare: Square | null,
+    ) => {
+      if (!activeDrag.hasMoved || destinationSquare === activeDrag.from) {
+        setSelectedSquare(activeDrag.wasSelected ? null : activeDrag.from);
+        return;
+      }
+
+      if (destinationSquare !== null && tryMove(activeDrag.from, destinationSquare)) {
+        return;
+      }
+
+      const targetPoint = getSquareClientPoint(boardRef.current, activeDrag.from);
+      if (targetPoint !== null) {
+        setReturningDrag({
+          pieceId: activeDrag.pieceId,
+          pieceCode: activeDrag.pieceCode,
+          start: activeDrag.currentPosition,
+          target: targetPoint,
+          squareSize: activeDrag.squareSize,
+          animate: false,
+        });
+      }
+    };
+
     const handlePointerMove = (event: PointerEvent) => {
       setDragState((currentDragState) => {
         if (currentDragState === null) {
@@ -289,42 +315,35 @@ export default function Board({
 
     const handlePointerUp = (event: PointerEvent) => {
       const activeDrag = dragState;
+      if (activeDrag === null) {
+        return;
+      }
+
       setDragState(null);
-
-      const destinationSquare = getSquareFromClientPoint(
-        boardRef.current,
-        event.clientX,
-        event.clientY,
+      finishDrag(
+        activeDrag,
+        getSquareFromClientPoint(boardRef.current, event.clientX, event.clientY),
       );
+    };
 
-      if (!activeDrag.hasMoved || destinationSquare === activeDrag.from) {
-        setSelectedSquare(activeDrag.wasSelected ? null : activeDrag.from);
+    const handlePointerCancel = () => {
+      const activeDrag = dragState;
+      if (activeDrag === null) {
         return;
       }
 
-      if (destinationSquare !== null && tryMove(activeDrag.from, destinationSquare)) {
-        return;
-      }
-
-      const targetPoint = getSquareClientPoint(boardRef.current, activeDrag.from);
-      if (targetPoint !== null) {
-        setReturningDrag({
-          pieceId: activeDrag.pieceId,
-          pieceCode: activeDrag.pieceCode,
-          start: activeDrag.currentPosition,
-          target: targetPoint,
-          squareSize: activeDrag.squareSize,
-          animate: false,
-        });
-      }
+      setDragState(null);
+      finishDrag(activeDrag, null);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
 
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
     };
   }, [dragState, handleSquarePress, tryMove]);
 

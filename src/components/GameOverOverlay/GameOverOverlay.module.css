@@ -1,0 +1,102 @@
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 3vw, 1.6rem);
+  border-radius: 1.6rem;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--theme-overlay) 78%, transparent),
+      var(--theme-overlay)
+    );
+  backdrop-filter: blur(16px);
+}
+
+.card {
+  width: min(100%, 24rem);
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+  padding: clamp(1.35rem, 4vw, 1.9rem);
+  border-radius: 1.45rem;
+  text-align: center;
+  background:
+    linear-gradient(180deg, var(--theme-panel-strong), var(--theme-panel));
+  border: 1px solid var(--theme-panel-border);
+  box-shadow:
+    0 28px 70px var(--theme-board-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.cardWin {
+  border-color: rgba(52, 211, 153, 0.32);
+}
+
+.cardLoss {
+  border-color: rgba(248, 113, 113, 0.34);
+}
+
+.cardDraw {
+  border-color: rgba(245, 189, 88, 0.32);
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--theme-accent);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.7rem, 4vw, 2.35rem);
+  line-height: 1.05;
+  color: var(--theme-heading);
+}
+
+.detail {
+  margin: 0;
+  line-height: 1.6;
+  color: var(--theme-text-muted);
+}
+
+.actionButton {
+  appearance: none;
+  padding: 0.85rem 1.15rem;
+  border: 1px solid var(--theme-button-border);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, var(--theme-button-start), var(--theme-button-end));
+  color: var(--theme-button-text);
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.actionButton:hover,
+.actionButton:focus-visible {
+  transform: translateY(-1px);
+  border-color: var(--theme-button-hover);
+  box-shadow: 0 18px 34px var(--theme-button-shadow);
+}
+
+@media (max-width: 560px) {
+  .overlay {
+    padding: 0.75rem;
+  }
+
+  .card {
+    gap: 0.85rem;
+    border-radius: 1.2rem;
+  }
+}

@@ -447,6 +447,11 @@
   gap: 0.85rem;
 }
 
+.boardSurface {
+  position: relative;
+  isolation: isolate;
+}
+
 .thinkingBadge {
   display: inline-flex;
   align-items: center;

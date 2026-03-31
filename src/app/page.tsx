@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import Board from "@/components/Board/Board";
 import CapturedPieces from "@/components/CapturedPieces/CapturedPieces";
+import GameOverOverlay from "@/components/GameOverOverlay/GameOverOverlay";
 import MoveHistory from "@/components/MoveHistory/MoveHistory";
 import { useChessEngine } from "@/hooks/useChessEngine";
 
@@ -20,6 +21,7 @@ import {
   getUndoPlyCount,
   parseUciMove,
   replayGame,
+  shouldShowLoadingOverlay,
   shouldEngineMove,
   toWhiteCentipawns,
   type DifficultyKey,
@@ -69,8 +71,12 @@ export default function Home() {
   const moveCount = history.length;
   const undoPlyCount = getUndoPlyCount(currentFen, moveCount);
   const boardDisabled = !isReady || isThinking || result !== null;
-  const showLoadingScreen = !isReady || !loadingDismissed;
-  const loadingScreenClosing = isReady && !loadingDismissed;
+  const showLoadingScreen = shouldShowLoadingOverlay({
+    engineError,
+    isReady,
+    loadingDismissed,
+  });
+  const loadingScreenClosing = engineError === null && isReady && !loadingDismissed;
   const statusLabel = getStatusLabel({
     engineError,
     game,
@@ -425,34 +431,18 @@ export default function Home() {
         </section>
 
         <section className={styles.boardColumn}>
-          {result !== null ? (
-            <div
-              className={`${styles.panel} ${styles.resultBanner} ${
-                result.tone === "win"
-                  ? styles.resultBannerWin
-                  : result.tone === "loss"
-                    ? styles.resultBannerLoss
-                    : styles.resultBannerDraw
-              }`}
-            >
-              <div>
-                <p className={styles.eyebrow}>Game over</p>
-                <h2 className={styles.resultTitle}>{result.title}</h2>
-                <p className={styles.resultDetail}>{result.detail}</p>
-              </div>
-              <button className={styles.actionButton} onClick={handleNewGame} type="button">
-                New Game
-              </button>
-            </div>
-          ) : null}
-
           <div className={styles.boardStage}>
-            <Board
-              disabled={boardDisabled}
-              fen={currentFen}
-              lastMove={lastMove}
-              onMove={handleMove}
-            />
+            <div className={styles.boardSurface}>
+              <Board
+                disabled={boardDisabled}
+                fen={currentFen}
+                lastMove={lastMove}
+                onMove={handleMove}
+              />
+              {result !== null ? (
+                <GameOverOverlay onNewGame={handleNewGame} result={result} />
+              ) : null}
+            </div>
             {isThinking ? (
               <div className={styles.thinkingBadge}>
                 <span aria-hidden="true" className={styles.spinner} />

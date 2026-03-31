@@ -110,6 +110,18 @@ export function shouldEngineMove(fen: string): boolean {
   return fen.split(" ")[1] === "b";
 }
 
+export function shouldShowLoadingOverlay({
+  engineError,
+  isReady,
+  loadingDismissed,
+}: {
+  engineError: string | null;
+  isReady: boolean;
+  loadingDismissed: boolean;
+}): boolean {
+  return engineError === null && (!isReady || !loadingDismissed);
+}
+
 export function getUndoPlyCount(fen: string, historyLength: number): number {
   if (historyLength === 0) {
     return 0;
