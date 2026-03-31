@@ -62,12 +62,15 @@
 }
 
 .boardCaption {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem 1.25rem;
-  justify-content: space-between;
   color: #d8e3f6;
   font-size: 0.95rem;
+}
+
+.captionWide {
+  grid-column: 1 / -1;
 }
 
 .captionLabel {
@@ -101,6 +104,35 @@
   color: #c9d6ee;
 }
 
+.detailList {
+  display: grid;
+  gap: 0.95rem;
+  margin: 0;
+}
+
+.detailList div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1.05rem;
+  background: rgba(14, 24, 43, 0.7);
+  border: 1px solid rgba(155, 196, 255, 0.12);
+}
+
+.detailList dt {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #8bb8ff;
+}
+
+.detailList dd {
+  margin: 0;
+  line-height: 1.55;
+  color: #e2ebfb;
+}
+
 @media (min-width: 900px) {
   .layout {
     grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
@@ -114,5 +146,11 @@
 
   .boardColumn {
     grid-column: 2;
+  }
+}
+
+@media (max-width: 720px) {
+  .boardCaption {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

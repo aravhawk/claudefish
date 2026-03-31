@@ -1,5 +1,8 @@
-const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
-const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"] as const;
+import type { Square } from "chess.js";
+
+export const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
+export const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"] as const;
+export const EMPTY_BOARD_FEN = "8/8/8/8/8/8/8/8 w - - 0 1";
 
 export type PieceCode =
   | "P"
@@ -61,6 +64,34 @@ export function getPieceName(piece: PieceCode): string {
   return PIECE_NAMES[piece];
 }
 
+export function isLightSquare(fileIndex: number, rankIndex: number): boolean {
+  return (fileIndex + rankIndex) % 2 === 0;
+}
+
+export function squareToIndexes(square: Square): { fileIndex: number; rankIndex: number } {
+  const fileIndex = FILES.indexOf(square[0] as (typeof FILES)[number]);
+  const rankIndex = RANKS.indexOf(square[1] as (typeof RANKS)[number]);
+
+  if (fileIndex === -1 || rankIndex === -1) {
+    throw new Error(`Invalid board square "${square}".`);
+  }
+
+  return { fileIndex, rankIndex };
+}
+
+export function indexesToSquare(fileIndex: number, rankIndex: number): Square {
+  const file = FILES[fileIndex];
+  const rank = RANKS[rankIndex];
+
+  if (file === undefined || rank === undefined) {
+    throw new Error(
+      `Invalid board coordinates file=${fileIndex} rank=${rankIndex}.`,
+    );
+  }
+
+  return `${file}${rank}` as Square;
+}
+
 function expandFenRow(row: string): Array<PieceCode | null> {
   const squares: Array<PieceCode | null> = [];
 
@@ -99,9 +130,9 @@ export function buildBoardSquares(fen: string): BoardSquare[] {
 
   return board.flatMap((rank, rankIndex) =>
     rank.map((piece, fileIndex) => ({
-      square: `${FILES[fileIndex]}${RANKS[rankIndex]}`,
+      square: indexesToSquare(fileIndex, rankIndex),
       piece,
-      isLight: (fileIndex + rankIndex) % 2 === 0,
+      isLight: isLightSquare(fileIndex, rankIndex),
       fileLabel: rankIndex === RANKS.length - 1 ? FILES[fileIndex] : undefined,
       rankLabel: fileIndex === 0 ? RANKS[rankIndex] : undefined,
     })),

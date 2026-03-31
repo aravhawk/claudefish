@@ -1,4 +1,5 @@
 .boardShell {
+  position: relative;
   width: 100%;
 }
 
@@ -17,6 +18,7 @@
 }
 
 .board {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(8, minmax(0, 1fr));
   width: 100%;
@@ -29,10 +31,14 @@
 
 .square {
   position: relative;
-  display: grid;
-  place-items: center;
+  appearance: none;
+  display: block;
   min-width: 0;
   min-height: 0;
+  padding: 0;
+  border: 0;
+  text-align: inherit;
+  cursor: pointer;
   user-select: none;
 }
 
@@ -42,37 +48,6 @@
 
 .dark {
   background: #b58863;
-}
-
-.piece {
-  font-size: clamp(1.55rem, 5vw, 3.75rem);
-  line-height: 1;
-  font-family:
-    "Noto Sans Symbols 2",
-    "Apple Symbols",
-    "Segoe UI Symbol",
-    "Arial Unicode MS",
-    serif;
-}
-
-.pieceWhite {
-  color: #fff8ec;
-  text-shadow:
-    -1px -1px 0 rgba(86, 58, 28, 0.4),
-    1px -1px 0 rgba(86, 58, 28, 0.4),
-    -1px 1px 0 rgba(86, 58, 28, 0.4),
-    1px 1px 0 rgba(86, 58, 28, 0.4),
-    0 2px 3px rgba(17, 24, 39, 0.22);
-}
-
-.pieceBlack {
-  color: #24160e;
-  text-shadow:
-    -1px -1px 0 rgba(255, 247, 232, 0.28),
-    1px -1px 0 rgba(255, 247, 232, 0.28),
-    -1px 1px 0 rgba(255, 247, 232, 0.28),
-    1px 1px 0 rgba(255, 247, 232, 0.28),
-    0 2px 3px rgba(17, 24, 39, 0.24);
 }
 
 .rankLabel,
@@ -104,6 +79,208 @@
   color: rgba(248, 236, 216, 0.95);
 }
 
+.squareSelected {
+  box-shadow:
+    inset 0 0 0 0.22rem rgba(110, 196, 255, 0.92),
+    inset 0 0 0 0.45rem rgba(9, 30, 56, 0.18);
+}
+
+.squareLastMove {
+  box-shadow: inset 0 0 0 999px rgba(251, 191, 36, 0.18);
+}
+
+.squareCheck {
+  box-shadow:
+    inset 0 0 0 999px rgba(239, 68, 68, 0.22),
+    inset 0 0 1.15rem rgba(153, 27, 27, 0.6);
+}
+
+.squareDragTarget {
+  box-shadow: inset 0 0 0 0.22rem rgba(110, 231, 183, 0.95);
+}
+
+.moveIndicator,
+.captureIndicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.moveIndicator {
+  width: 24%;
+  height: 24%;
+  border-radius: 999px;
+  background: rgba(14, 35, 60, 0.28);
+}
+
+.captureIndicator {
+  width: 70%;
+  height: 70%;
+  border: 0.18rem solid rgba(15, 23, 42, 0.42);
+  border-radius: 999px;
+}
+
+.pieceLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pieceButton {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 12.5%;
+  height: 12.5%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  transform: translate(var(--piece-file), var(--piece-rank));
+  transition:
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 120ms ease;
+  pointer-events: none;
+  touch-action: none;
+}
+
+.pieceMovable {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.pieceMovable:active {
+  cursor: grabbing;
+}
+
+.pieceHidden {
+  opacity: 0;
+}
+
+.pieceGlyph,
+.promotionGlyph {
+  font-size: clamp(1.55rem, 5vw, 3.75rem);
+  line-height: 1;
+  font-family:
+    "Noto Sans Symbols 2",
+    "Apple Symbols",
+    "Segoe UI Symbol",
+    "Arial Unicode MS",
+    serif;
+}
+
+.pieceWhite {
+  color: #fff8ec;
+  text-shadow:
+    -1px -1px 0 rgba(86, 58, 28, 0.4),
+    1px -1px 0 rgba(86, 58, 28, 0.4),
+    -1px 1px 0 rgba(86, 58, 28, 0.4),
+    1px 1px 0 rgba(86, 58, 28, 0.4),
+    0 2px 3px rgba(17, 24, 39, 0.22);
+}
+
+.pieceBlack {
+  color: #24160e;
+  text-shadow:
+    -1px -1px 0 rgba(255, 247, 232, 0.28),
+    1px -1px 0 rgba(255, 247, 232, 0.28),
+    -1px 1px 0 rgba(255, 247, 232, 0.28),
+    1px 1px 0 rgba(255, 247, 232, 0.28),
+    0 2px 3px rgba(17, 24, 39, 0.24);
+}
+
+.dragPiece {
+  position: fixed;
+  inset: 0 auto auto 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.dragPieceActive {
+  filter: drop-shadow(0 1.25rem 1.65rem rgba(15, 23, 42, 0.35));
+}
+
+.dragPieceActive .pieceGlyph {
+  transform: scale(1.08);
+}
+
+.promotionOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgba(5, 11, 20, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.promotionDialog {
+  width: min(100%, 28rem);
+  padding: 1.4rem;
+  border-radius: 1.35rem;
+  background:
+    linear-gradient(165deg, rgba(17, 25, 40, 0.96), rgba(6, 12, 24, 0.98));
+  border: 1px solid rgba(147, 197, 253, 0.2);
+  box-shadow: 0 32px 90px rgba(0, 0, 0, 0.42);
+}
+
+.promotionEyebrow {
+  margin: 0 0 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #8bb8ff;
+}
+
+.promotionTitle {
+  margin: 0;
+  font-size: clamp(1.35rem, 3vw, 1.8rem);
+  color: #f8fbff;
+}
+
+.promotionOptions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1.2rem;
+}
+
+.promotionButton {
+  appearance: none;
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+  padding: 1rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 1rem;
+  background: rgba(15, 23, 42, 0.84);
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.promotionButton:hover,
+.promotionButton:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(96, 165, 250, 0.5);
+  box-shadow: 0 18px 28px rgba(15, 23, 42, 0.28);
+}
+
+.promotionLabel {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #edf4ff;
+  text-transform: capitalize;
+}
+
 @media (max-width: 640px) {
   .boardFrame {
     border-radius: 1.1rem;
@@ -122,5 +299,13 @@
   .fileLabel {
     right: 0.25rem;
     bottom: 0.18rem;
+  }
+
+  .captureIndicator {
+    border-width: 0.15rem;
+  }
+
+  .promotionDialog {
+    padding: 1.1rem;
   }
 }

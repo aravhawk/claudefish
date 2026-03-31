@@ -1,41 +1,79 @@
 "use client";
 
-import { Chess } from "chess.js";
-import { useState } from "react";
+import { Chess, type Move, type PieceSymbol, type Square } from "chess.js";
+import { useMemo, useState } from "react";
 
 import Board from "@/components/Board/Board";
 
 import styles from "./page.module.css";
 
-const boardHighlights = [
-  "8×8 board rendered from chess.js FEN state",
-  "All 32 opening pieces shown in their correct starting squares",
-  "Responsive layout sized for desktop, tablet, and smaller screens",
+const interactionHighlights = [
+  "Drag any side-to-move piece and drop it onto a legal square.",
+  "Click a piece to select it, then click a highlighted target square to move.",
+  "Promotion, castling, en passant, check, and last-move highlights are all live.",
 ];
 
-const upcomingPanels = [
-  "Move history will live in this side panel next.",
-  "Game controls and engine actions will fill the opposite panel.",
-  "This first pass focuses on rendering only, with no piece interaction yet.",
-];
+interface GameSnapshot {
+  fen: string;
+  lastMove: Move | null;
+}
 
 export default function Home() {
-  const [game] = useState(() => new Chess());
-  const fen = game.fen();
+  const [gameSnapshot, setGameSnapshot] = useState<GameSnapshot>(() => {
+    const game = new Chess();
+
+    return {
+      fen: game.fen(),
+      lastMove: null,
+    };
+  });
+
+  const game = useMemo(() => new Chess(gameSnapshot.fen), [gameSnapshot.fen]);
+  const turnLabel = game.turn() === "w" ? "White" : "Black";
+  const statusLabel = game.isCheck()
+    ? `${turnLabel} to move — in check`
+    : `${turnLabel} to move`;
+  const moveCount = getPlayedPlyCount(gameSnapshot.fen);
+
+  const handleMove = ({
+    from,
+    to,
+    promotion,
+  }: {
+    from: Square;
+    to: Square;
+    promotion?: PieceSymbol;
+  }) => {
+    const nextGame = new Chess(gameSnapshot.fen);
+    const move = nextGame.move({
+      from,
+      to,
+      ...(promotion ? { promotion } : {}),
+    });
+
+    if (move === null) {
+      return;
+    }
+
+    setGameSnapshot({
+      fen: nextGame.fen(),
+      lastMove: move,
+    });
+  };
 
   return (
     <main className={styles.page}>
       <div className={styles.layout}>
         <section className={styles.panel}>
           <p className={styles.eyebrow}>Claudefish</p>
-          <h1 className={styles.heroTitle}>Board foundation ready for play.</h1>
+          <h1 className={styles.heroTitle}>Board interaction is live.</h1>
           <p className={styles.copy}>
-            The opening position is sourced from a live <code>chess.js</code> game
-            instance and rendered as a square-first responsive board with white at
-            the bottom.
+            The board now supports full local play: drag-and-drop, click-to-move,
+            legal move indicators, last-move and check highlights, and promotion
+            selection powered by <code>chess.js</code>.
           </p>
           <ul className={styles.statusList}>
-            {boardHighlights.map((item) => (
+            {interactionHighlights.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
@@ -43,34 +81,69 @@ export default function Home() {
 
         <section className={styles.boardColumn}>
           <div className={styles.boardStage}>
-            <Board fen={fen} />
+            <Board
+              fen={gameSnapshot.fen}
+              lastMove={gameSnapshot.lastMove}
+              onMove={handleMove}
+            />
           </div>
           <div className={`${styles.panel} ${styles.boardCaption}`}>
             <div>
-              <span className={styles.captionLabel}>Position</span>
-              <span className={styles.captionValue}>White to move · standard setup</span>
+              <span className={styles.captionLabel}>Status</span>
+              <span className={styles.captionValue}>{statusLabel}</span>
             </div>
             <div>
+              <span className={styles.captionLabel}>Last move</span>
+              <span className={styles.captionValue}>
+                {gameSnapshot.lastMove?.san ?? "None yet"}
+              </span>
+            </div>
+            <div>
+              <span className={styles.captionLabel}>Moves played</span>
+              <span className={styles.captionValue}>{moveCount}</span>
+            </div>
+            <div className={styles.captionWide}>
               <span className={styles.captionLabel}>FEN</span>
-              <span className={styles.captionValue}>{fen}</span>
+              <span className={styles.captionValue}>{gameSnapshot.fen}</span>
             </div>
           </div>
         </section>
 
         <section className={`${styles.panel} ${styles.placeholderPanel}`}>
-          <p className={styles.eyebrow}>Next up</p>
-          <h2 className={styles.placeholderTitle}>Reserved side-panel space</h2>
+          <p className={styles.eyebrow}>Interaction notes</p>
+          <h2 className={styles.placeholderTitle}>Everything stays legal.</h2>
           <p className={styles.placeholderText}>
-            The overall page layout already leaves room for move history, controls,
-            and engine status without crowding the board.
+            Only the side to move can interact, pinned pieces expose only their
+            legal squares, and illegal drags animate back to their origin.
           </p>
-          <ul className={styles.featureList}>
-            {upcomingPanels.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
+          <dl className={styles.detailList}>
+            <div>
+              <dt>Drag feedback</dt>
+              <dd>Pieces lift with a shadow, track the cursor, and animate into place.</dd>
+            </div>
+            <div>
+              <dt>Promotion flow</dt>
+              <dd>The board locks until you pick Q, R, B, or N in the modal dialog.</dd>
+            </div>
+            <div>
+              <dt>Special moves</dt>
+              <dd>Castling animates both pieces, and en passant removes the correct pawn.</dd>
+            </div>
+          </dl>
         </section>
       </div>
     </main>
   );
+}
+
+function getPlayedPlyCount(fen: string): number {
+  const fields = fen.split(" ");
+  const fullmove = Number(fields[5] ?? "1");
+  const sideToMove = fields[1];
+
+  if (!Number.isFinite(fullmove) || fullmove < 1) {
+    return 0;
+  }
+
+  return (fullmove - 1) * 2 + (sideToMove === "b" ? 1 : 0);
 }
