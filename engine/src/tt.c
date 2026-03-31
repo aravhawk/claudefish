@@ -1,8 +1,9 @@
 #include "tt.h"
 
+#include <stdlib.h>
 #include <string.h>
 
-static TTEntry tt_table[TT_ENTRY_COUNT];
+static TTEntry *tt_table = NULL;
 static uint8_t tt_age = 0;
 static bool tt_initialized = false;
 
@@ -31,17 +32,29 @@ void tt_init(void) {
         return;
     }
 
-    tt_clear();
+    tt_table = (TTEntry *) calloc(TT_ENTRY_COUNT, sizeof(*tt_table));
+    if (tt_table == NULL) {
+        return;
+    }
+
     tt_initialized = true;
 }
 
 void tt_clear(void) {
-    memset(tt_table, 0, sizeof(tt_table));
+    if (tt_table == NULL) {
+        return;
+    }
+
+    memset(tt_table, 0, TT_ENTRY_COUNT * sizeof(*tt_table));
     tt_age = 0;
 }
 
 void tt_new_search(void) {
     tt_init();
+    if (tt_table == NULL) {
+        return;
+    }
+
     tt_age = (uint8_t) (tt_age + 1);
 }
 
@@ -49,6 +62,10 @@ bool tt_probe(uint64_t hash, TTEntry *out_entry) {
     TTEntry *entry;
 
     tt_init();
+    if (tt_table == NULL) {
+        return false;
+    }
+
     entry = &tt_table[tt_index(hash)];
 
     if (entry->flag == TT_FLAG_NONE || entry->key != tt_key(hash)) {
@@ -77,6 +94,10 @@ void tt_store(uint64_t hash, int depth, int score, int static_eval, Move best_mo
     int stored_score;
 
     tt_init();
+    if (tt_table == NULL) {
+        return;
+    }
+
     entry = &tt_table[tt_index(hash)];
     stored_score = tt_score_to_storage(score, ply);
 

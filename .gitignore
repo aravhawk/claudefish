@@ -1,8 +1,10 @@
 emsdk/
 node_modules/
 .next/
+out/
 /tmp/
 *.o
 *.wasm
+*.tsbuildinfo
 public/engine/engine.js
 public/engine/engine.wasm

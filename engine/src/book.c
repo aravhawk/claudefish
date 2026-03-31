@@ -229,6 +229,9 @@ bool book_load_file(const char *path) {
 }
 
 bool book_load_default(void) {
+#ifdef __EMSCRIPTEN__
+    return book_load_memory(book_embedded_data, book_embedded_size);
+#else
     static const char *paths[] = {
         "engine/book/rodent.bin",
         "./engine/book/rodent.bin",
@@ -243,6 +246,7 @@ bool book_load_default(void) {
     }
 
     return book_load_memory(book_embedded_data, book_embedded_size);
+#endif
 }
 
 void book_init(void) {

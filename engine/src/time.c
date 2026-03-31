@@ -1,5 +1,6 @@
 #include "time.h"
 
+#include <stddef.h>
 #include <sys/time.h>
 
 uint64_t time_now_ms(void) {
