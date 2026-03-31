@@ -131,6 +131,7 @@ void position_clear(Position *pos) {
     pos->en_passant_sq = NO_SQUARE;
     pos->fullmove_number = 1;
     pos->zobrist_hash = zobrist_castling_keys[0];
+    pos->history_count = 0;
 }
 
 bool position_clear_piece(Position *pos, int square) {
@@ -218,6 +219,9 @@ void position_refresh_hashes(Position *pos) {
     pos->zobrist_hash = zobrist_compute_hash(pos);
     pos->pawn_hash = zobrist_compute_pawn_hash(pos);
     eval_refresh_position_state(pos);
+    pos->state_count = 0;
+    pos->history_hashes[0] = pos->zobrist_hash;
+    pos->history_count = 1;
 }
 
 bool position_from_fen(Position *pos, const char *fen) {

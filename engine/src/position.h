@@ -35,6 +35,8 @@ typedef struct Position {
     uint64_t pawn_hash;
     PositionState state_stack[POSITION_STATE_STACK_CAPACITY];
     size_t state_count;
+    uint64_t history_hashes[POSITION_STATE_STACK_CAPACITY + 1];
+    size_t history_count;
 } Position;
 
 void position_clear(Position *pos);

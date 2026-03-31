@@ -2,17 +2,17 @@
 
 #include <math.h>
 #include <string.h>
-#include <time.h>
 
+#include "draw.h"
 #include "evaluate.h"
 #include "movorder.h"
+#include "time.h"
 #include "tt.h"
 
 typedef struct SearchContext {
     uint64_t nodes;
     uint64_t qnodes;
-    clock_t start_clock;
-    int time_limit_ms;
+    SearchTimer timer;
     bool stop;
     Move killers[SEARCH_MAX_PLY][2];
     int history[2][BOARD_SQUARES][BOARD_SQUARES];
@@ -65,22 +65,22 @@ static void search_init_lmr_table(void) {
 }
 
 static double search_elapsed_ms(const SearchContext *ctx) {
-    return ((double) (clock() - ctx->start_clock) * 1000.0) / (double) CLOCKS_PER_SEC;
+    return ctx == NULL ? 0.0 : time_elapsed_ms(&ctx->timer);
 }
 
 static void search_check_time(SearchContext *ctx) {
     uint64_t visited;
 
-    if (ctx == NULL || ctx->stop || ctx->time_limit_ms <= 0) {
+    if (ctx == NULL || ctx->stop || ctx->timer.limit_ms <= 0) {
         return;
     }
 
     visited = ctx->nodes + ctx->qnodes;
-    if ((visited & 1023ULL) != 0) {
+    if ((visited & (TIME_NODE_CHECK_GRANULARITY - 1ULL)) != 0) {
         return;
     }
 
-    if (search_elapsed_ms(ctx) >= (double) ctx->time_limit_ms) {
+    if (time_is_expired(&ctx->timer)) {
         ctx->stop = true;
     }
 }
@@ -323,6 +323,10 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
         return 0;
     }
 
+    if (draw_is_draw(pos)) {
+        return draw_score(pos);
+    }
+
     in_check = movegen_is_in_check(pos, (Color) pos->side_to_move);
     if (tt_probe(pos->zobrist_hash, &entry)) {
         tt_move = entry.best_move;
@@ -467,6 +471,9 @@ static int search_negamax(
     }
 
     in_check = movegen_is_in_check(pos, (Color) pos->side_to_move);
+    if (draw_is_draw(pos)) {
+        return draw_score(pos);
+    }
     if (tt_probe(pos->zobrist_hash, &entry)) {
         int tt_score = tt_score_from_entry(&entry, ply);
 
@@ -733,8 +740,7 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
         max_depth = SEARCH_MAX_DEPTH;
     }
 
-    ctx.start_clock = clock();
-    ctx.time_limit_ms = time_limit_ms;
+    time_start(&ctx.timer, time_limit_ms);
     tt_new_search();
 
     for (depth = 1; depth <= max_depth; ++depth) {

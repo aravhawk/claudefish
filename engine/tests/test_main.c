@@ -11,6 +11,7 @@ int main(void) {
     failed += test_evaluate_run();
     failed += test_perft_run();
     failed += test_search_run();
+    failed += test_engine_api_run();
 
     if (failed == 0) {
         printf("PASS: all engine tests passed\n");

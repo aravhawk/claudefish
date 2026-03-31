@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include "draw.h"
+
 enum {
     EVAL_PAWN_HASH_SIZE = 16384,
     EVAL_OPENING_PHASE_TOTAL = 24
@@ -719,6 +721,10 @@ int eval_evaluate(Position *pos) {
 
     if (movegen_is_stalemate(pos)) {
         return 0;
+    }
+
+    if (draw_is_draw(pos)) {
+        return draw_score(pos);
     }
 
     eval_add_material_terms(pos, &mg_score, &eg_score);

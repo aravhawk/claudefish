@@ -190,7 +190,7 @@ static void test_material_advantage_scores(void) {
     ++tests_run;
 
     pawn_score = evaluate_fen(test_name, "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1");
-    piece_score = evaluate_fen(test_name, "4k3/8/8/8/8/8/3N4/4K3 w - - 0 1");
+    piece_score = evaluate_fen(test_name, "4k3/8/8/8/8/8/3R4/4K3 w - - 0 1");
     queen_score = evaluate_fen(test_name, "4k3/8/8/8/8/8/3Q4/4K3 w - - 0 1");
 
     expect_between(test_name, pawn_score, 50, 200, "extra pawn score");
