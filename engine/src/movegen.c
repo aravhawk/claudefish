@@ -929,6 +929,39 @@ bool movegen_make_move(Position *pos, Move move) {
     return true;
 }
 
+bool movegen_make_null_move(Position *pos) {
+    PositionState *state;
+    Color side_to_move;
+
+    if (pos == NULL || pos->state_count >= POSITION_STATE_STACK_CAPACITY) {
+        return false;
+    }
+
+    state = &pos->state_stack[pos->state_count++];
+    state->castling_rights = pos->castling_rights;
+    state->en_passant_sq = pos->en_passant_sq;
+    state->halfmove_clock = pos->halfmove_clock;
+    state->fullmove_number = pos->fullmove_number;
+    state->zobrist_hash = pos->zobrist_hash;
+    state->pawn_hash = pos->pawn_hash;
+    state->move = 0;
+    state->captured_piece = NO_PIECE;
+
+    side_to_move = (Color) pos->side_to_move;
+
+    if (pos->en_passant_sq != NO_SQUARE) {
+        pos->zobrist_hash ^= zobrist_en_passant_keys[bitboard_file_of(pos->en_passant_sq)];
+    }
+
+    pos->en_passant_sq = NO_SQUARE;
+    pos->halfmove_clock = (uint16_t) (pos->halfmove_clock + 1);
+    pos->fullmove_number = (uint16_t) (pos->fullmove_number + (side_to_move == BLACK ? 1 : 0));
+    pos->side_to_move = side_to_move == WHITE ? BLACK : WHITE;
+    pos->zobrist_hash ^= zobrist_side_key;
+
+    return true;
+}
+
 bool movegen_unmake_move(Position *pos) {
     PositionState state;
     Color side_to_move;
@@ -1011,6 +1044,25 @@ bool movegen_unmake_move(Position *pos) {
     }
 
     pos->side_to_move = side_to_move;
+    pos->castling_rights = state.castling_rights;
+    pos->en_passant_sq = state.en_passant_sq;
+    pos->halfmove_clock = state.halfmove_clock;
+    pos->fullmove_number = state.fullmove_number;
+    pos->zobrist_hash = state.zobrist_hash;
+    pos->pawn_hash = state.pawn_hash;
+
+    return true;
+}
+
+bool movegen_unmake_null_move(Position *pos) {
+    PositionState state;
+
+    if (pos == NULL || pos->state_count == 0) {
+        return false;
+    }
+
+    state = pos->state_stack[--pos->state_count];
+    pos->side_to_move = pos->side_to_move == WHITE ? BLACK : WHITE;
     pos->castling_rights = state.castling_rights;
     pos->en_passant_sq = state.en_passant_sq;
     pos->halfmove_clock = state.halfmove_clock;

@@ -1,5 +1,6 @@
 #include "search.h"
 
+#include <math.h>
 #include <string.h>
 #include <time.h>
 
@@ -16,6 +17,52 @@ typedef struct SearchContext {
     Move killers[SEARCH_MAX_PLY][2];
     int history[2][BOARD_SQUARES][BOARD_SQUARES];
 } SearchContext;
+
+static const SearchOptions search_default_options = {
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+};
+static SearchOptions search_options = {
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+};
+static int search_lmr_table[SEARCH_MAX_DEPTH + 1][MOVEGEN_MAX_MOVES + 1];
+static bool search_initialized = false;
+enum {
+    SEARCH_STALEMATE_MARGIN = 500,
+    SEARCH_STALEMATE_BIAS = 800
+};
+
+static void search_init_lmr_table(void) {
+    int depth;
+
+    for (depth = 0; depth <= SEARCH_MAX_DEPTH; ++depth) {
+        int move_count;
+
+        for (move_count = 0; move_count <= MOVEGEN_MAX_MOVES; ++move_count) {
+            int reduction = 0;
+
+            if (depth >= 3 && move_count > 3) {
+                reduction = (int) (0.75 + (log((double) depth) * log((double) move_count) / 2.25));
+                if (reduction < 1) {
+                    reduction = 1;
+                } else if (reduction > depth - 2) {
+                    reduction = depth - 2;
+                }
+            }
+
+            search_lmr_table[depth][move_count] = reduction;
+        }
+    }
+}
 
 static double search_elapsed_ms(const SearchContext *ctx) {
     return ((double) (clock() - ctx->start_clock) * 1000.0) / (double) CLOCKS_PER_SEC;
@@ -101,6 +148,72 @@ static void search_store_history(SearchContext *ctx, Color side, Move move, int 
     }
 }
 
+static bool search_is_quiet_move(Move move) {
+    return !movorder_is_capture(move) && move_promotion_piece(move) == MOVE_PROMOTION_NONE;
+}
+
+static bool search_has_non_pawn_material(const Position *pos, Color side) {
+    PieceType piece_type;
+
+    if (pos == NULL) {
+        return false;
+    }
+
+    for (piece_type = KNIGHT; piece_type <= QUEEN; ++piece_type) {
+        if (pos->piece_bitboards[piece_bitboard_index(make_piece(side, piece_type))] != 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool search_is_pawn_only_endgame(const Position *pos) {
+    Color side;
+
+    if (pos == NULL) {
+        return false;
+    }
+
+    for (side = WHITE; side <= BLACK; ++side) {
+        if (search_has_non_pawn_material(pos, side)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static int search_total_non_king_pieces(const Position *pos) {
+    int total = 0;
+    Color side;
+    PieceType piece_type;
+
+    if (pos == NULL) {
+        return 0;
+    }
+
+    for (side = WHITE; side <= BLACK; ++side) {
+        for (piece_type = PAWN; piece_type <= QUEEN; ++piece_type) {
+            total += bitboard_popcount(pos->piece_bitboards[piece_bitboard_index(make_piece(side, piece_type))]);
+        }
+    }
+
+    return total;
+}
+
+static int search_razor_margin(int depth) {
+    static const int margins[4] = { 0, 200, 300, 450 };
+
+    if (depth < 0) {
+        depth = 0;
+    } else if (depth > 3) {
+        depth = 3;
+    }
+
+    return margins[depth];
+}
+
 bool search_move_to_uci(Move move, char buffer[6]) {
     char source[3];
     char target[3];
@@ -163,10 +276,32 @@ void search_init(void) {
     movegen_init();
     eval_init();
     tt_init();
+
+    if (!search_initialized) {
+        search_init_lmr_table();
+        search_initialized = true;
+    }
 }
 
 void search_reset_heuristics(void) {
     tt_clear();
+}
+
+SearchOptions search_get_options(void) {
+    return search_options;
+}
+
+void search_reset_options(void) {
+    search_options = search_default_options;
+}
+
+void search_set_options(const SearchOptions *options) {
+    if (options == NULL) {
+        search_reset_options();
+        return;
+    }
+
+    search_options = *options;
 }
 
 static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int beta, int ply) {
@@ -299,13 +434,22 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
     return best_score;
 }
 
-static int search_negamax(Position *pos, SearchContext *ctx, int depth, int alpha, int beta, int ply) {
+static int search_negamax(
+    Position *pos,
+    SearchContext *ctx,
+    int depth,
+    int alpha,
+    int beta,
+    int ply,
+    bool allow_null_move
+) {
     TTEntry entry;
     Move tt_move = 0;
     Move best_move = 0;
     MoveList legal_moves;
     OrderedMoveList ordered_moves;
     bool in_check;
+    bool pv_node = (beta - alpha) > 1;
     int alpha_original = alpha;
     int static_eval;
     int best_score = -SEARCH_INF;
@@ -344,6 +488,52 @@ static int search_negamax(Position *pos, SearchContext *ctx, int depth, int alph
         static_eval = eval_evaluate(pos);
     }
 
+    if (search_options.enable_razoring &&
+        !pv_node &&
+        depth <= 3 &&
+        !in_check &&
+        alpha > -SEARCH_MATE_BOUND &&
+        static_eval + search_razor_margin(depth) <= alpha) {
+        int razor_score = search_quiescence(pos, ctx, alpha, beta, ply);
+
+        if (ctx->stop) {
+            return 0;
+        }
+
+        if (razor_score <= alpha) {
+            return razor_score;
+        }
+    }
+
+    if (search_options.enable_null_move_pruning &&
+        !pv_node &&
+        allow_null_move &&
+        ply > 0 &&
+        depth >= 3 &&
+        !in_check &&
+        beta < SEARCH_MATE_BOUND &&
+        static_eval >= beta &&
+        search_has_non_pawn_material(pos, (Color) pos->side_to_move) &&
+        search_total_non_king_pieces(pos) > 3 &&
+        !search_is_pawn_only_endgame(pos)) {
+        int reduction = depth >= 6 ? 3 : 2;
+        int null_depth = depth - reduction - 1;
+
+        if (null_depth > 0 && movegen_make_null_move(pos)) {
+            int null_score = -search_negamax(pos, ctx, null_depth, -beta, -beta + 1, ply + 1, false);
+
+            movegen_unmake_null_move(pos);
+            if (ctx->stop) {
+                return 0;
+            }
+
+            if (null_score >= beta) {
+                tt_store(pos->zobrist_hash, depth, null_score, static_eval, 0, TT_FLAG_BETA, ply);
+                return null_score;
+            }
+        }
+    }
+
     movegen_generate_legal(pos, &legal_moves);
     if (legal_moves.count == 0) {
         return in_check ? (-SEARCH_MATE_SCORE + ply) : 0;
@@ -362,23 +552,101 @@ static int search_negamax(Position *pos, SearchContext *ctx, int depth, int alph
     for (index = 0; index < ordered_moves.count; ++index) {
         Move move;
         int score;
+        int child_depth;
+        int reduction = 0;
+        int move_number = (int) index + 1;
+        bool quiet_move;
+        bool gives_check;
         Color side_to_move = (Color) pos->side_to_move;
 
         if (!movorder_pick_next(&ordered_moves, index, &move)) {
             continue;
         }
 
+        quiet_move = search_is_quiet_move(move);
         if (!movegen_make_move(pos, move)) {
             continue;
         }
 
+        gives_check = movegen_is_in_check(pos, (Color) pos->side_to_move);
+
+        if (movegen_is_stalemate(pos)) {
+            score = 0;
+            if (static_eval >= SEARCH_STALEMATE_MARGIN) {
+                score = -SEARCH_STALEMATE_BIAS;
+            } else if (static_eval <= -SEARCH_STALEMATE_MARGIN) {
+                score = SEARCH_STALEMATE_BIAS;
+            }
+
+            movegen_unmake_move(pos);
+
+            if (score > best_score) {
+                best_score = score;
+                best_move = move;
+            }
+
+            if (score > alpha) {
+                alpha = score;
+            }
+
+            if (score >= beta) {
+                search_store_killer(ctx, ply, move);
+                search_store_history(ctx, side_to_move, move, depth);
+                tt_store(pos->zobrist_hash, depth, score, static_eval, move, TT_FLAG_BETA, ply);
+                return score;
+            }
+
+            continue;
+        }
+
+        if (search_options.enable_futility_pruning &&
+            !pv_node &&
+            depth <= 3 &&
+            !in_check &&
+            quiet_move &&
+            !gives_check &&
+            static_eval + (150 * depth) <= alpha) {
+            movegen_unmake_move(pos);
+            continue;
+        }
+
+        child_depth = depth - 1 + (search_options.enable_check_extensions && gives_check ? 1 : 0);
+        if (child_depth < 0) {
+            child_depth = 0;
+        }
+
+        if (search_options.enable_lmr &&
+            ply > 0 &&
+            !pv_node &&
+            !first_move &&
+            !in_check &&
+            depth >= 5 &&
+            move_number > 3 &&
+            quiet_move &&
+            !gives_check &&
+            child_depth > 1) {
+            int depth_index = depth > SEARCH_MAX_DEPTH ? SEARCH_MAX_DEPTH : depth;
+            int move_index = move_number > MOVEGEN_MAX_MOVES ? MOVEGEN_MAX_MOVES : move_number;
+
+            reduction = search_lmr_table[depth_index][move_index];
+            if (reduction > child_depth - 1) {
+                reduction = child_depth - 1;
+            }
+        }
+
         if (first_move) {
-            score = -search_negamax(pos, ctx, depth - 1, -beta, -alpha, ply + 1);
+            score = -search_negamax(pos, ctx, child_depth, -beta, -alpha, ply + 1, true);
             first_move = false;
         } else {
-            score = -search_negamax(pos, ctx, depth - 1, -alpha - 1, -alpha, ply + 1);
-            if (!ctx->stop && score > alpha && score < beta) {
-                score = -search_negamax(pos, ctx, depth - 1, -beta, -alpha, ply + 1);
+            int reduced_depth = child_depth - reduction;
+
+            if (reduced_depth < 0) {
+                reduced_depth = 0;
+            }
+
+            score = -search_negamax(pos, ctx, reduced_depth, -alpha - 1, -alpha, ply + 1, true);
+            if (!ctx->stop && ((reduction > 0 && score > alpha - 64) || (reduction == 0 && score > alpha))) {
+                score = -search_negamax(pos, ctx, child_depth, -beta, -alpha, ply + 1, true);
             }
         }
 
@@ -449,6 +717,8 @@ int search_extract_pv(Position *pos, int max_depth, Move *pv_out, int pv_capacit
 bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms, SearchResult *out_result) {
     SearchContext ctx;
     SearchResult result;
+    int previous_score = 0;
+    bool have_previous_score = false;
     int depth;
 
     if (pos == NULL || max_depth <= 0) {
@@ -471,7 +741,24 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
         Move pv[SEARCH_MAX_PLY];
         uint64_t previous_nodes = ctx.nodes + ctx.qnodes;
         int pv_length;
-        int score = search_negamax(pos, &ctx, depth, -SEARCH_INF, SEARCH_INF, 0);
+        int score;
+
+        if (search_options.enable_aspiration_windows && have_previous_score && depth >= 5) {
+            int alpha = previous_score - 50;
+            int beta = previous_score + 50;
+
+            score = search_negamax(pos, &ctx, depth, alpha, beta, 0, true);
+            if (!ctx.stop && (score <= alpha || score >= beta)) {
+                alpha = previous_score - 200;
+                beta = previous_score + 200;
+                score = search_negamax(pos, &ctx, depth, alpha, beta, 0, true);
+                if (!ctx.stop) {
+                    score = search_negamax(pos, &ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true);
+                }
+            }
+        } else {
+            score = search_negamax(pos, &ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true);
+        }
 
         if (ctx.stop) {
             break;
@@ -498,6 +785,9 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
             pv,
             pv_length
         );
+
+        previous_score = score;
+        have_previous_score = true;
     }
 
     result.stopped = ctx.stop;

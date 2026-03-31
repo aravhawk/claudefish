@@ -38,8 +38,20 @@ typedef struct SearchResult {
     SearchIteration iterations[SEARCH_MAX_DEPTH];
 } SearchResult;
 
+typedef struct SearchOptions {
+    bool enable_null_move_pruning;
+    bool enable_lmr;
+    bool enable_futility_pruning;
+    bool enable_razoring;
+    bool enable_aspiration_windows;
+    bool enable_check_extensions;
+} SearchOptions;
+
 void search_init(void);
 void search_reset_heuristics(void);
+SearchOptions search_get_options(void);
+void search_set_options(const SearchOptions *options);
+void search_reset_options(void);
 bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms, SearchResult *out_result);
 int search_extract_pv(Position *pos, int max_depth, Move *pv_out, int pv_capacity);
 bool search_move_to_uci(Move move, char buffer[6]);

@@ -12,8 +12,18 @@ commands:
     else
     echo "No tests configured yet" && exit 0;
     fi
-  typecheck: pnpm typecheck
-  lint: pnpm lint
+  typecheck: >-
+    if [ -f package.json ] && grep -q '"typecheck"' package.json 2>/dev/null; then
+    pnpm typecheck;
+    else
+    echo "No typecheck configured yet" && exit 0;
+    fi
+  lint: >-
+    if [ -f package.json ] && grep -q '"lint"' package.json 2>/dev/null; then
+    pnpm lint;
+    else
+    echo "No lint configured yet" && exit 0;
+    fi
 
 services:
   web:
