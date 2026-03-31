@@ -50,38 +50,27 @@ If it already exists, verify the setup:
 - **Read** `next.config.js` or `next.config.mjs` for WASM/Worker configuration
 - **Execute** `pnpm install` to ensure dependencies are current
 
-Configure Next.js for WASM if not already done:
-
-- **Edit** `next.config.js` to add webpack configuration for `.wasm` files
-- Ensure `experiments.asyncWebAssembly` is enabled or WASM is loaded manually
+Configure Next.js for WASM: WASM files are served from `public/engine/` — no webpack/Turbopack WASM config needed. Use `next.config.mjs` headers to set `Content-Type: application/wasm`.
 
 ### 3. Compile C Engine to WASM (Execute)
 
 First, ensure Emscripten is available:
 
 ```bash
-source ~/emsdk/emsdk_env.sh 2>/dev/null || source ./emsdk/emsdk_env.sh
+source ./emsdk/emsdk_env.sh
 ```
 
-Then compile the engine to WASM:
+Then use the existing build script: `./scripts/build-engine.sh`
 
-```bash
-emcc engine/*.c \
-  -O3 \
-  -s WASM=1 \
-  -s EXPORTED_FUNCTIONS='["_init_engine","_set_position","_search","_get_best_move","_perft"]' \
-  -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8"]' \
-  -s MODULARIZE=1 \
-  -s EXPORT_NAME="ChessEngine" \
-  -s ALLOW_MEMORY_GROWTH=1 \
-  -s INITIAL_MEMORY=16777216 \
-  -s STACK_SIZE=1048576 \
-  -s ENVIRONMENT='web,worker' \
-  -s SINGLE_FILE=0 \
-  -o public/engine/chess-engine.js
-```
+**CRITICAL Emscripten flags for ES module compatibility:**
+- `-s MODULARIZE=1 -s EXPORT_ES6=1` — emit ES module so `import()` works in module workers
+- `-s EXPORT_NAME="createChessEngine"` — factory function name
+- `-s ENVIRONMENT='web,worker'`
+- `--embed-file engine/book/rodent.bin@/book.bin` if embedding the opening book
 
-- **Execute** the emcc command. Fix any compilation errors.
+**IMPORTANT:** The worker uses `import('/engine/engine.js')` which requires ES module output. If using `-s EXPORT_ES6=1`, the glue code will be a proper ES module. Without it, the worker cannot load the engine.
+
+- **Execute** the build script. Fix any compilation errors.
 - Verify both `.js` glue code and `.wasm` binary are generated.
 
 ### 4. Create Web Worker and Comlink Proxy (Create / Edit)
