@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "evaluate.h"
 #include "zobrist.h"
 
 static bool append_char(char *buffer, size_t buffer_size, size_t *index, char value) {
@@ -158,6 +159,7 @@ bool position_clear_piece(Position *pos, int square) {
     pos->occupancy[BOTH] &= ~mask;
     pos->mailbox[square] = NO_PIECE;
     xor_piece_hashes(pos, piece, square);
+    eval_update_piece_square_state(pos, piece, square, -1);
 
     return true;
 }
@@ -194,6 +196,7 @@ bool position_set_piece(Position *pos, int square, Piece piece) {
     pos->occupancy[BOTH] |= mask;
     pos->mailbox[square] = (uint8_t) piece;
     xor_piece_hashes(pos, piece, square);
+    eval_update_piece_square_state(pos, piece, square, 1);
 
     return true;
 }
@@ -214,6 +217,7 @@ void position_refresh_hashes(Position *pos) {
     zobrist_init();
     pos->zobrist_hash = zobrist_compute_hash(pos);
     pos->pawn_hash = zobrist_compute_pawn_hash(pos);
+    eval_refresh_position_state(pos);
 }
 
 bool position_from_fen(Position *pos, const char *fen) {

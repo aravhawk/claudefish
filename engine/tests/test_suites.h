@@ -4,6 +4,7 @@
 int test_board_run(void);
 int test_movegen_run(void);
 int test_legality_run(void);
+int test_evaluate_run(void);
 int test_perft_run(void);
 
 #endif

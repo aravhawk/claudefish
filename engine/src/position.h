@@ -24,6 +24,8 @@ typedef struct Position {
     Bitboard piece_bitboards[PIECE_BITBOARDS];
     Bitboard occupancy[3];
     uint8_t mailbox[BOARD_SQUARES];
+    int16_t pst_mg[2];
+    int16_t pst_eg[2];
     uint8_t side_to_move;
     uint8_t castling_rights;
     int8_t en_passant_sq;

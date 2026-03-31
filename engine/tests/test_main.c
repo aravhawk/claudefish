@@ -8,6 +8,7 @@ int main(void) {
     failed += test_board_run();
     failed += test_movegen_run();
     failed += test_legality_run();
+    failed += test_evaluate_run();
     failed += test_perft_run();
 
     if (failed == 0) {

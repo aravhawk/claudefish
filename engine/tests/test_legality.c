@@ -76,6 +76,13 @@ static bool position_fields_equal(const Position *actual, const Position *expect
         return false;
     }
 
+    if (actual->pst_mg[WHITE] != expected->pst_mg[WHITE] ||
+        actual->pst_mg[BLACK] != expected->pst_mg[BLACK] ||
+        actual->pst_eg[WHITE] != expected->pst_eg[WHITE] ||
+        actual->pst_eg[BLACK] != expected->pst_eg[BLACK]) {
+        return false;
+    }
+
     return actual->side_to_move == expected->side_to_move &&
            actual->castling_rights == expected->castling_rights &&
            actual->en_passant_sq == expected->en_passant_sq &&
