@@ -2,7 +2,7 @@
 
 ## Validation Surface
 - **Engine (Milestone 1):** Automated tests via native C compilation (gcc) + WASM integration tests (Node.js)
-- **Website (Milestone 2):** agent-browser at http://localhost:3000
+- **Website (Milestone 2):** agent-browser at http://localhost:3001
 - **Tool:** agent-browser for all browser-based UI testing
 
 ## Validation Concurrency

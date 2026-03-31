@@ -101,7 +101,7 @@ cd web && pnpm dev
 
 Then use **agent-browser** to verify every interactive feature:
 
-- **agent-browser**: Navigate to `http://localhost:3000`
+- **agent-browser**: Navigate to `http://localhost:3001`
 - **agent-browser**: Verify the chessboard renders correctly with all 32 pieces in starting position
 - **agent-browser**: Test drag-and-drop — drag e2 pawn to e4, confirm it moves
 - **agent-browser**: Test click-to-move — click a piece, see highlighted squares, click target
@@ -154,8 +154,8 @@ Summarize what was built and verified. Include:
     "Edited src/app/page.tsx — Composed all components, chess.js game state with useState, engine integration via useChessEngine, auto-engine-reply after player moves, responsive grid layout",
     "Edited src/app/layout.tsx — Added Inter font, dark mode meta, page title 'Claudefish'",
     "Created src/styles/board-themes.ts — Three themes: classic (brown/cream), blue (navy/light blue), green (dark green/light green) with piece set configuration",
-    "Executed: cd web && pnpm dev — dev server started on localhost:3000",
-    "agent-browser: Navigated to localhost:3000 — board renders correctly, all 32 pieces in starting position, responsive layout confirmed",
+    "Executed: cd web && pnpm dev --port 3001 — dev server started on localhost:3001",
+    "agent-browser: Navigated to localhost:3001 — board renders correctly, all 32 pieces in starting position, responsive layout confirmed",
     "agent-browser: Dragged white e2 pawn to e4 — piece moved smoothly, legal move dots appeared on drag, square highlighted after drop",
     "agent-browser: Engine responded with e7-e5 after ~0.5s — bestMove state updated, piece animated to new position",
     "agent-browser: Tested click-to-move — clicked Nf3, saw green dots on f3 and other legal squares, clicked f3, knight moved",
