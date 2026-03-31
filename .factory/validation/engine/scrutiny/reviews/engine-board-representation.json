@@ -1,0 +1,34 @@
+{
+  "featureId": "engine-board-representation",
+  "reviewedAt": "2026-03-31T06:15:34Z",
+  "commitId": "c502e2834df2f4d7663b4aebafe8c85697fd70e6",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature establishes the requested board structures, FEN parser/serializer, and Zobrist tables, but it misses the feature's exact round-trip guarantee: `position_from_fen()` accepts non-canonical castling-rights orderings and `position_to_fen()` always rewrites them in canonical `KQkq` order. Because accepted inputs can change when reserialized, the implementation does not fully satisfy the promised FEN round-trip behavior.",
+    "issues": [
+      {
+        "file": "engine/src/position.c",
+        "line": 307,
+        "severity": "blocking",
+        "description": "`position_from_fen()` accepts any unique castling-right letters in any order (`qk`, `kQ`, etc.), but `position_to_fen()` always serializes rights back out in fixed `KQkq` order (`engine/src/position.c:458-479`). An input such as `4k3/8/8/8/8/8/8/4K3 w qk - 0 1` therefore parses successfully and reserializes as `... w kq - 0 1`, which violates the feature's required exact FEN round-trip behavior for accepted inputs."
+      },
+      {
+        "file": "engine/tests/test_board.c",
+        "line": 174,
+        "severity": "non_blocking",
+        "description": "`test_all_castling_right_combinations()` only generates canonical castling strings via `append_castling_string()`, so the suite never exercises the parser/serializer mismatch on other castling-right spellings that `position_from_fen()` currently accepts. That coverage gap is why the round-trip bug above slipped through."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The shared `engine-worker` skill no longer matches the mission's actual engine layout. It still instructs workers to read/write `tests/` and `engine/` root files and compile with `engine/*.c tests/*.c`, while this mission documents and uses `engine/src/` and `engine/tests/`.",
+      "evidence": ".factory/skills/engine-worker/SKILL.md:35-64 vs /Users/aravhawk/.factory/missions/70ca98e6-cb3b-4e1c-9eb9-4d887ed17139/AGENTS.md:38-46; the reviewed transcript skeleton for worker session 0eaff8ec-2abd-4255-b9f0-b9353816246f shows the worker creating `engine/src` and `engine/tests` and compiling `engine/src/*.c engine/tests/*.c`."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the handoff, transcript skeleton, and commit `c502e28` for `engine-board-representation`. Result: fail, because the FEN parser accepts castling-right spellings that the serializer rewrites, breaking the feature's exact round-trip guarantee; I also noted that the shared `engine-worker` skill is out of sync with the mission's `engine/src` / `engine/tests` layout."
+}

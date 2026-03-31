@@ -1,0 +1,21 @@
+{
+  "featureId": "engine-special-moves-legality",
+  "reviewedAt": "2026-03-31T06:16:51Z",
+  "commitId": "10a0253",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Reviewed the feature handoff, transcript skeleton, and commit `10a0253` for the special-moves/legality implementation. The diff adds square-attack and check detection, absolute pin detection, pseudo-legal castling/en-passant/promotion generation, legal-move filtering via make/unmake, mate/stalemate helpers, a reversible state stack on `Position`, and a focused legality test suite covering the requested scenarios. I did not find any blocking or non-blocking correctness defects in the reviewed feature scope.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The `engine-worker` skill is stale relative to this repository layout. It still tells workers to read/write tests under `tests/`, edit sources under `engine/`, and compile with `engine/*.c tests/*.c`, while the actual Claudefish engine layout and commands use `engine/src/*.c` and `engine/tests/*.c`.",
+      "evidence": "`.factory/skills/engine-worker/SKILL.md:36,42,51,63` vs mission `AGENTS.md:39,45-46,58`. The reviewed worker's transcript skeleton/handoff also show the real paths: reads from `engine/src/position.h` and `engine/tests/test_main.c`, plus added coverage in `engine/tests/test_legality.c` (`handoffs/...8b2b6da0-f5d0-46f5-bd11-0e37f52e15da.json:11,45`)."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The reviewed commit fully implements the scoped special-move legality work and backs it with targeted legality/integrity tests. I did not find feature-scoped code defects, but I noted a stale engine-worker skill that still points future workers at the wrong engine source/test paths."
+}

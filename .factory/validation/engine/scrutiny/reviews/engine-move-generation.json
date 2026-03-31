@@ -1,0 +1,26 @@
+{
+  "featureId": "engine-move-generation",
+  "reviewedAt": "2026-03-31T06:15:02Z",
+  "commitId": "94ca2af",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Reviewed the handoff, transcript skeleton, and commit 94ca2af in detail. The feature implements the scoped pseudo-legal move generation work: precomputed knight/king/pawn attacks, validated magic-bitboard sliding attacks, packed move encoding, move-list collection, and pseudo-legal generation for pawns, knights, bishops, rooks, queens, kings, and promotions. I found no correctness issues within this feature's defined scope.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The `engine-worker` skill is stale relative to this repo and milestone breakdown. It still tells workers to read/write tests under `tests/`, edit sources under `engine/`, compile with `engine/*.c tests/*.c`, and always run perft for move-generation work, but the actual repo layout and commands use `engine/src/*.c` and `engine/tests/*.c`, and this mission intentionally splits pseudo-legal move generation from the later special-moves/legality/perft-ready feature.",
+      "evidence": "`.factory/skills/engine-worker/SKILL.md:35-45,51-64,82-101` vs `.factory/services.yaml:1-14`, `.factory/library/architecture.md:11-30`, and `features.json:293-322`. The reviewed worker transcript/handoff for session `7158a249-3b97-429b-8dc1-3ea2274753c3` shows the worker correctly used `engine/src/*.c` + `engine/tests/*.c` and did not run a perft phase."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The shared architecture doc describes move generation as already including legality filtering plus castling and en passant, but the mission feature plan explicitly stages those responsibilities into the later `engine-special-moves-legality` feature. That mismatch can make milestone-scoped engine tasks look broader than they really are.",
+      "evidence": "`.factory/library/architecture.md:16` says move generation includes 'post-generation legality filter' plus castling and en passant, while `features.json:293-322` separates `engine-move-generation` from `engine-special-moves-legality`."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The reviewed commit cleanly implements the requested pseudo-legal move-generation foundation and its accompanying tests. I did not find feature-scoped code defects, but I did note shared-state drift in the engine skill and architecture docs."
+}

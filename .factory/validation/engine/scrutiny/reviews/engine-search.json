@@ -1,0 +1,44 @@
+{
+  "featureId": "engine-search",
+  "reviewedAt": "2026-03-31T06:16:17.705951Z",
+  "commitId": "5152513",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature adds the expected search, TT, move-ordering, and test files, but it should not pass as submitted because the mate-in-1 regression coverage does not satisfy the mission's required motifs. I also found a smaller correctness issue in PV extraction: it follows non-EXACT TT entries, so the reported PV/output can drift from the true principal variation.",
+    "issues": [
+      {
+        "file": "engine/tests/test_search.c",
+        "line": 134,
+        "severity": "blocking",
+        "description": "VAL-SEARCH-001 requires mate-in-1 coverage for specific motifs (back-rank mate, queen delivery, and smothered mate), but lines 134-136 only test simple bare-king mating nets. Because the added suite never exercises the required back-rank or smothered patterns, the feature's evidence does not actually cover the validation contract it claims to fulfill."
+      },
+      {
+        "file": "engine/src/search.c",
+        "line": 432,
+        "severity": "non_blocking",
+        "description": "`search_extract_pv()` follows any TT entry that has a legal `best_move`, without checking that the entry flag is `TT_FLAG_EXACT`. Alpha/beta bound entries are not guaranteed to lie on the true principal variation, so the per-depth PV reported to callers can be incorrect beyond the root move."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The `engine-worker` skill is stale about where engine C tests live. It tells workers to read/write tests under `tests/`, but this mission's conventions use `engine/tests/`.",
+      "evidence": "`/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish/.factory/skills/engine-worker/SKILL.md` lines 36-42 reference `tests/`; mission `/Users/aravhawk/.factory/missions/70ca98e6-cb3b-4e1c-9eb9-4d887ed17139/AGENTS.md` lines 39, 46, and 58 say engine C tests live in `engine/tests/`; the reviewed worker ultimately added `engine/tests/test_search.c`."
+    },
+    {
+      "area": "skills",
+      "observation": "The skill says to follow TDD and write tests before implementation, but the recorded `skillFeedback.followedProcedure: true` does not match the transcript order for this feature.",
+      "evidence": "The transcript skeleton for worker session `345da7c8-2535-49b7-bf68-94f5ecece84b` shows creation of `engine/src/tt.h`, `tt.c`, `movorder.h`, `movorder.c`, `search.h`, and `search.c` before `engine/tests/test_search.c`, even though `engine-worker` says 'Follow TDD \u2014 always write the test before the implementation.' The handoff still reports `skillFeedback.followedProcedure: true`."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The shared library does not appear to contain a documented corpus of search-regression FENs/tactical test positions, so the worker had to source them ad hoc from the web.",
+      "evidence": "The transcript skeleton contains WebSearch queries for `simple chess mate in 2 FEN king queen vs king`, `chess tactic FEN knight fork pin discovered attack removal of defender`, and `\"mate in 3\" FEN king queen vs king`. Meanwhile `/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish/.factory/library/` only contains `architecture.md`, `engine-book-api.md`, `engine-legality.md`, `environment.md`, and `user-testing.md` \u2014 nothing documenting a reusable search test-position set."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Failed review. The core search stack is present, but the feature's mate-in-1 regression coverage does not meet the validation contract, so the feature should not be accepted as-is. Separately, PV extraction currently follows non-exact TT entries, which can make reported PV lines unreliable."
+}

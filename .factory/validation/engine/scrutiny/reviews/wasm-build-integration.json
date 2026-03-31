@@ -1,0 +1,39 @@
+{
+  "featureId": "wasm-build-integration",
+  "reviewedAt": "2026-03-31T06:16:36Z",
+  "commitId": "436b6457943b70d3cf554678ecb02e31505ed525",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature largely delivers the requested Next.js scaffold and WASM build pipeline, but it is not fully shippable as reviewed because the new package-level test command depends on ignored build artifacts that are absent in a clean checkout. I also found a non-blocking caching risk in the new WASM response headers.",
+    "issues": [
+      {
+        "file": "package.json",
+        "line": 10,
+        "severity": "blocking",
+        "description": "The new `test` script only runs `node --test tests/check-wasm-artifacts.test.mjs`, but that test immediately reads `public/engine/engine.js` and `public/engine/engine.wasm` (`tests/check-wasm-artifacts.test.mjs:108-122` in the current tree) even though both artifacts are ignored build outputs (`.gitignore:9-10`). On a clean checkout or CI job that invokes `pnpm test` directly, the script fails before any assertions unless a manual Emscripten build has already been run, so the feature's declared package test entrypoint is not self-contained."
+      },
+      {
+        "file": "next.config.mjs",
+        "line": 22,
+        "severity": "non_blocking",
+        "description": "The added header marks `/engine/*.wasm` as `public, max-age=31536000, immutable` even though `scripts/build-engine.sh` always emits the fixed filename `public/engine/engine.wasm`. Because the URL is not content-hashed, browsers can keep serving a stale binary across deploys, which risks JS/WASM version skew until users hard-refresh or caches are purged."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The shared `integration-worker` skill is stale for this repository: it still teaches a `web/` subapp layout and webpack/asyncWebAssembly steps that do not match the current root-level Next.js app or the reviewed feature's actual implementation path.",
+      "evidence": ".factory/skills/integration-worker/SKILL.md:44-56,140-175 instructs workers to scaffold under `web/`, `cd web` for builds, and edit webpack WASM settings, while the repo and reviewed feature use a root app with `src/` and `public/engine/`."
+    },
+    {
+      "area": "conventions",
+      "observation": "Mission/shared-state sources disagree on the web port for this feature. The feature metadata still expects validation on port 3000, but the current mission conventions and service catalog reserve 3001.",
+      "evidence": "Feature spec: `/Users/aravhawk/.factory/missions/70ca98e6-cb3b-4e1c-9eb9-4d887ed17139/features.json:549-556`; mission guidance: `/Users/aravhawk/.factory/missions/70ca98e6-cb3b-4e1c-9eb9-4d887ed17139/AGENTS.md:5,59,86,90-91`; service catalog: `/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish/.factory/services.yaml:5,30,33`."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the handoff, transcript skeleton, and commit diff for `wasm-build-integration`. Result: fail, because the feature's new `pnpm test` entrypoint depends on ignored WASM build artifacts that are missing on a clean checkout; I also noted a non-blocking immutable-cache issue on the fixed-name `engine.wasm` asset."
+}

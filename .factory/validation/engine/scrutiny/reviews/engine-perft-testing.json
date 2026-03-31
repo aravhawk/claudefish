@@ -1,0 +1,28 @@
+{
+  "featureId": "engine-perft-testing",
+  "reviewedAt": "2026-03-31T06:14:34Z",
+  "commitId": "3b6acf7",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature adds a dedicated native perft regression suite and wires it into the engine test runner. It covers all six standard perft positions, curated legal-move-count checks, divide-perft diagnostics, and the required starting-position depth-5 timing guard. I found no blocking defects; the only review note is that the duplicate-move assertion is narrower than the requirement language because it compares full encoded moves rather than normalized move identity.",
+    "issues": [
+      {
+        "file": "engine/tests/test_perft.c",
+        "line": 97,
+        "severity": "non_blocking",
+        "description": "`move_list_has_duplicates()` compares full `Move` values, but `Move` also encodes flags and captured-piece metadata (`engine/src/movegen.h:30-63`). That means the suite can miss semantically duplicate legal moves if the same source/target/promotion is emitted twice with different metadata bits; combined with the depth-2 recursion limit at `engine/tests/test_perft.c:267`, this does not fully prove the stated 'no duplicate moves generated' requirement."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The `engine-worker` skill is out of sync with the repo's actual engine layout and commands. It still instructs workers to use `tests/` and `engine/*.c`, while the mission documents and repository tooling use `engine/tests/` and `engine/src/*.c`.",
+      "evidence": "`.factory/skills/engine-worker/SKILL.md:35-36,42,51-52,63` refer to `tests/` and `engine/*.c`; `AGENTS.md:39,45-46,58` and `.factory/services.yaml:6,11` use `engine/tests/*.c` and `engine/src/*.c`. The reviewed worker transcript skeleton also shows the worker reading `engine/tests/test_main.c` and compiling `engine/src/*.c engine/tests/*.c` instead of following the stale skill paths."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Review result: pass. The feature delivers the expected perft regression coverage and integrates it cleanly into the native engine test runner, with one non-blocking note about duplicate-move verification being narrower than the requirement wording."
+}

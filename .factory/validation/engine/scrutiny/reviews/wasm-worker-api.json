@@ -1,0 +1,34 @@
+{
+  "featureId": "wasm-worker-api",
+  "reviewedAt": "2026-03-31T06:20:00Z",
+  "commitId": "82349891219c0ad2c91a435a7529fe34f2b9002f",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature is not shippable as implemented: the new Web Worker bootstrap tries to dynamically import `/engine/engine.js`, but the Emscripten build still emits CommonJS/AMD-style glue rather than an ES module, so the worker cannot construct the engine in a browser module worker. The expanded tests only exercise the Node `require()` path, which is why this core integration failure was missed.",
+    "issues": [
+      {
+        "file": "src/workers/chess-engine.worker.ts",
+        "line": 50,
+        "severity": "blocking",
+        "description": "`loadModule()` assumes `import(/* webpackIgnore: true */ \"/engine/engine.js\")` will yield a callable factory, but `scripts/build-engine.sh:20-33` only enables `MODULARIZE` and emits `engine.js` as CommonJS/AMD glue (`public/engine/engine.js:2` ends in `module.exports=...` with no ESM export). In a browser module worker, that import produces an empty namespace object, so `createChessEngine(...)` throws and `useChessEngine()` never reaches the ready state."
+      },
+      {
+        "file": "tests/check-wasm-artifacts.test.mjs",
+        "line": 77,
+        "severity": "non_blocking",
+        "description": "The new integration coverage only loads the glue code via `require(engineJsPath)` inside a Node shim, so it never exercises the actual browser/module-worker `import()` path used by `src/workers/chess-engine.worker.ts`. That gap allowed the broken worker bootstrap to pass validation even though the feature's runtime integration is still failing."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The shared WASM integration guidance currently teaches the same incompatible pattern that caused this failure: `integration-worker` tells workers to compile with `-s MODULARIZE=1` to `public/engine/chess-engine.js` and then load it with module-worker `import()`, but it never requires ES-module output (`-s EXPORT_ES6=1` / `.mjs`) or a classic-worker `importScripts()` fallback.",
+      "evidence": ".factory/skills/integration-worker/SKILL.md:69-81 compiles only `MODULARIZE` output to `chess-engine.js`, while .factory/research/wasm-nextjs-integration.md:309-353 and .factory/library/architecture.md:44-46 recommend dynamic-importing `engine.js` inside a module worker."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Reviewed the handoff, commit diff, affected files, and transcript skeleton for `wasm-worker-api`. Result: fail, because the worker/bootstrap path is incompatible with the emitted Emscripten module format, and the added tests do not cover the browser worker loading path that the feature depends on."
+}
