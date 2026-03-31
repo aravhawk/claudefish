@@ -4,7 +4,14 @@ commands:
   build: pnpm build
   dev: pnpm dev --turbopack --port 3000
   test-engine: gcc -O2 -o /tmp/claudefish_test engine/src/*.c engine/tests/*.c -lm && /tmp/claudefish_test
-  test: pnpm test
+  test: >-
+    if [ -f package.json ] && grep -q '"test"' package.json 2>/dev/null; then
+    pnpm test;
+    elif ls engine/tests/*.c 1>/dev/null 2>&1; then
+    gcc -O2 -o /tmp/claudefish_test engine/src/*.c engine/tests/*.c -lm && /tmp/claudefish_test;
+    else
+    echo "No tests configured yet" && exit 0;
+    fi
   typecheck: pnpm typecheck
   lint: pnpm lint
 
