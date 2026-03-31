@@ -1,0 +1,66 @@
+{
+  "milestone": "engine",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 31,
+    "passed": 31,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-MOVEGEN-001",
+    "VAL-MOVEGEN-002",
+    "VAL-MOVEGEN-003",
+    "VAL-MOVEGEN-004",
+    "VAL-MOVEGEN-005",
+    "VAL-MOVEGEN-006",
+    "VAL-MOVEGEN-007",
+    "VAL-MOVEGEN-008",
+    "VAL-MOVEGEN-009",
+    "VAL-MOVEGEN-010",
+    "VAL-MOVEGEN-011",
+    "VAL-MOVEGEN-012",
+    "VAL-SEARCH-001",
+    "VAL-SEARCH-002",
+    "VAL-SEARCH-003",
+    "VAL-SEARCH-004",
+    "VAL-SEARCH-005",
+    "VAL-SEARCH-006",
+    "VAL-SEARCH-007",
+    "VAL-SEARCH-008",
+    "VAL-SEARCH-009",
+    "VAL-SEARCH-010",
+    "VAL-SEARCH-011",
+    "VAL-SEARCH-012",
+    "VAL-WASM-001",
+    "VAL-WASM-002",
+    "VAL-WASM-003",
+    "VAL-WASM-004",
+    "VAL-WASM-005",
+    "VAL-WASM-007",
+    "VAL-WASM-008"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": ".factory/library/user-testing.md",
+      "description": "Added engine-specific validation concurrency, setup expectations, flow-validator guidance, and coverage-mapping notes for native and WASM test surfaces.",
+      "source": "setup"
+    },
+    {
+      "target": ".factory/library/user-testing.md",
+      "description": "Recorded that engine assertion IDs should be sourced from validation-contract.md plus features.json because contract-work/wasm.md numbering diverges from the final contract.",
+      "source": "flow-report"
+    }
+  ],
+  "flowReports": [
+    ".factory/validation/engine/user-testing/flows/native-perft.json",
+    ".factory/validation/engine/user-testing/flows/native-legality.json",
+    ".factory/validation/engine/user-testing/flows/native-search-tactics.json",
+    ".factory/validation/engine/user-testing/flows/native-search-runtime.json",
+    ".factory/validation/engine/user-testing/flows/wasm-api.json"
+  ],
+  "previousRound": null
+}

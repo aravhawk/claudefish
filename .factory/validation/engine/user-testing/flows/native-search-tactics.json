@@ -1,0 +1,186 @@
+{
+  "groupId": "native-search-tactics",
+  "testedAt": "2026-03-31T07:24:53.369679+00:00",
+  "isolation": {
+    "repoRoot": "/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish",
+    "missionDir": "/Users/aravhawk/.factory/missions/70ca98e6-cb3b-4e1c-9eb9-4d887ed17139",
+    "surface": "test-runner",
+    "concurrency": 1,
+    "commandSurface": "gcc -O2 -o /tmp/claudefish_test engine/src/*.c engine/tests/*.c -lm && /tmp/claudefish_test",
+    "evidenceDir": "/Users/aravhawk/.factory/missions/70ca98e6-cb3b-4e1c-9eb9-4d887ed17139/evidence/engine/native-core"
+  },
+  "toolsUsed": [
+    "test-runner"
+  ],
+  "commandsRun": [
+    {
+      "command": "gcc -O2 -o /tmp/claudefish_test engine/src/*.c engine/tests/*.c -lm && /tmp/claudefish_test",
+      "workingDirectory": "/Users/aravhawk/Library/Mobile Documents/com~apple~CloudDocs/Code/claudefish",
+      "exitCode": 0,
+      "evidence": [
+        "engine/native-core/native-search-tactics-output.txt"
+      ]
+    }
+  ],
+  "assertions": [
+    {
+      "id": "VAL-SEARCH-001",
+      "title": "Mate-in-1 Finding",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect native search coverage",
+          "expected": "At least 3 mate-in-1 positions assert mate score, mate distance 1, and a PV that reaches checkmate.",
+          "observed": "engine/tests/test_search.c:306-332 covers queen-box, back-rank, and smothered mate positions at lines 311-313 and checks mate score, mate distance 1, and PV-to-checkmate at lines 327-332."
+        },
+        {
+          "action": "Run the contract native engine command",
+          "expected": "Search coverage executes successfully inside the full native suite.",
+          "observed": "Command exited 0; output log contains \"PASS: 9 search tests passed\" and \"PASS: all engine tests passed\"."
+        }
+      ],
+      "evidence": {
+        "logs": [
+          "engine/native-core/native-search-tactics-output.txt",
+          "engine/native-core/native-search-tactics-coverage.txt"
+        ],
+        "output": "PASS: 9 search tests passed; PASS: all engine tests passed",
+        "coverage": "engine/tests/test_search.c:306-332"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-SEARCH-002",
+      "title": "Mate-in-2 Finding",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect native search coverage",
+          "expected": "At least 2 mate-in-2 positions assert mate score, mate distance 2, and a PV that reaches checkmate in exactly 2 moves.",
+          "observed": "engine/tests/test_search.c:337-362 covers two queen-shrink mate-in-2 positions at lines 342-343 and checks mate score, mate distance 2, and PV-to-checkmate at lines 357-362."
+        },
+        {
+          "action": "Run the contract native engine command",
+          "expected": "Search coverage executes successfully inside the full native suite.",
+          "observed": "Command exited 0; output log contains \"PASS: 9 search tests passed\" and \"PASS: all engine tests passed\"."
+        }
+      ],
+      "evidence": {
+        "logs": [
+          "engine/native-core/native-search-tactics-output.txt",
+          "engine/native-core/native-search-tactics-coverage.txt"
+        ],
+        "output": "PASS: 9 search tests passed; PASS: all engine tests passed",
+        "coverage": "engine/tests/test_search.c:337-362"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-SEARCH-003",
+      "title": "Mate-in-3 Finding",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect native search coverage",
+          "expected": "At least 1 mate-in-3 position asserts mate score, mate distance 3, and a PV that reaches checkmate in exactly 3 moves.",
+          "observed": "engine/tests/test_search.c:367-381 covers mate_in_three_queen_squeeze and checks mate score, mate distance 3, and PV-to-checkmate at lines 379-381."
+        },
+        {
+          "action": "Run the contract native engine command",
+          "expected": "Search coverage executes successfully inside the full native suite.",
+          "observed": "Command exited 0; output log contains \"PASS: 9 search tests passed\" and \"PASS: all engine tests passed\"."
+        }
+      ],
+      "evidence": {
+        "logs": [
+          "engine/native-core/native-search-tactics-output.txt",
+          "engine/native-core/native-search-tactics-coverage.txt"
+        ],
+        "output": "PASS: 9 search tests passed; PASS: all engine tests passed",
+        "coverage": "engine/tests/test_search.c:367-381"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-SEARCH-004",
+      "title": "Tactical Position Solving",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect native search coverage",
+          "expected": "Four tactical motifs assert the exact best move for knight fork, pin exploitation, discovered attack, and removal of defender.",
+          "observed": "engine/tests/test_search.c:384-416 covers all four motifs at lines 390-393 and asserts the selected best move matches the expected UCI move at lines 413-416."
+        },
+        {
+          "action": "Run the contract native engine command",
+          "expected": "Search coverage executes successfully inside the full native suite.",
+          "observed": "Command exited 0; output log contains \"PASS: 9 search tests passed\" and \"PASS: all engine tests passed\"."
+        }
+      ],
+      "evidence": {
+        "logs": [
+          "engine/native-core/native-search-tactics-output.txt",
+          "engine/native-core/native-search-tactics-coverage.txt"
+        ],
+        "output": "PASS: 9 search tests passed; PASS: all engine tests passed",
+        "coverage": "engine/tests/test_search.c:384-416"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-SEARCH-011",
+      "title": "Search Depth",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect native search coverage",
+          "expected": "Starting-position iterative deepening asserts completed depth >= 6 within 10 seconds and logs each completed depth with score, node count, and PV.",
+          "observed": "engine/tests/test_search.c:421-451 asserts completed depth >= 6 and iteration count at lines 434-441, then prints per-depth info lines at lines 447-448."
+        },
+        {
+          "action": "Run the contract native engine command",
+          "expected": "Depth log is printed through depth 6 and the suite passes.",
+          "observed": "Output log shows info depth 1-6 lines ending with \"info depth 6 score 10 nodes 36798 pv b1c3\", followed by \"PASS: 9 search tests passed\"."
+        }
+      ],
+      "evidence": {
+        "logs": [
+          "engine/native-core/native-search-tactics-output.txt",
+          "engine/native-core/native-search-tactics-coverage.txt"
+        ],
+        "output": "info depth 1-6 ...; PASS: 9 search tests passed",
+        "coverage": "engine/tests/test_search.c:421-451"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-SEARCH-012",
+      "title": "Stalemate Avoidance/Seeking",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Inspect native search coverage",
+          "expected": "Winning side avoids immediate stalemate; losing side chooses immediate stalemate when available.",
+          "observed": "engine/tests/test_search.c:589-686 builds winning and losing stalemate candidates, asserts the winning side avoids an immediate stalemate at lines 651-659, and asserts the losing side chooses an immediate stalemate and scores it above losing continuations at lines 673-685."
+        },
+        {
+          "action": "Run the contract native engine command",
+          "expected": "Stalemate-preference coverage executes successfully inside the full native suite.",
+          "observed": "Command exited 0; output log contains \"PASS: 9 search tests passed\" and \"PASS: all engine tests passed\"."
+        }
+      ],
+      "evidence": {
+        "logs": [
+          "engine/native-core/native-search-tactics-output.txt",
+          "engine/native-core/native-search-tactics-coverage.txt"
+        ],
+        "output": "PASS: 9 search tests passed; PASS: all engine tests passed",
+        "coverage": "engine/tests/test_search.c:589-686"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 6 assigned native search assertions through the contract test-runner surface; all 6 passed based on a clean native suite run plus matching test coverage in engine/tests/test_search.c."
+}
