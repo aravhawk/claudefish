@@ -7,6 +7,7 @@
 #include "../src/bitboard.h"
 #include "../src/position.h"
 #include "../src/zobrist.h"
+#include "test_suites.h"
 
 static int tests_run = 0;
 static int tests_failed = 0;
@@ -289,7 +290,10 @@ static void test_hashes_reflect_non_board_state(void) {
     expect_u64_eq(test_name, base.pawn_hash, ep_changed.pawn_hash, "pawn hash independent of en passant");
 }
 
-int main(void) {
+int test_board_run(void) {
+    tests_run = 0;
+    tests_failed = 0;
+
     zobrist_init();
 
     test_lerf_square_mapping();

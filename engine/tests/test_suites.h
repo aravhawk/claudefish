@@ -1,0 +1,7 @@
+#ifndef CLAUDEFISH_TEST_SUITES_H
+#define CLAUDEFISH_TEST_SUITES_H
+
+int test_board_run(void);
+int test_movegen_run(void);
+
+#endif

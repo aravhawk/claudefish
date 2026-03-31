@@ -18,6 +18,8 @@ static inline int bitboard_make_square(int file, int rank) {
 }
 
 int bitboard_popcount(Bitboard bitboard);
+int bitboard_lsb(Bitboard bitboard);
+int bitboard_pop_lsb(Bitboard *bitboard);
 bool bitboard_square_to_string(int square, char output[3]);
 int bitboard_square_from_string(const char *square_name);
 
