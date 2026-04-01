@@ -119,6 +119,23 @@ test("replayGame rebuilds the current position from stored moves", () => {
   );
 });
 
+test("replayGame can start from a loaded FEN without inheriting earlier move history", () => {
+  const baseFen = "4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1";
+  const rebuilt = replayGame([], baseFen);
+  const continued = replayGame([{ from: "e5", to: "d6" }], baseFen);
+  const direct = new Chess(baseFen);
+
+  direct.move({ from: "e5", to: "d6" });
+
+  assert.equal(rebuilt.fen(), baseFen);
+  assert.deepEqual(rebuilt.history({ verbose: true }), []);
+  assert.equal(continued.fen(), direct.fen());
+  assert.deepEqual(
+    continued.history({ verbose: true }).map((move) => move.san),
+    ["exd6"],
+  );
+});
+
 test("replayGame preserves repetition history from the stored move list", () => {
   const repeatedGame = replayGame([
     { from: "g1", to: "f3" },

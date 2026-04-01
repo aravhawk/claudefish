@@ -61,6 +61,8 @@ export interface CapturedPiecesByColor {
   black: PieceCode[];
 }
 
+export const STARTING_POSITION_FEN = new Chess().fen();
+
 export function getDifficultyConfig(level: DifficultyKey) {
   return (
     DIFFICULTY_LEVELS.find((option) => option.key === level) ?? DIFFICULTY_LEVELS[1]
@@ -84,8 +86,11 @@ export function parseUciMove(move: string): ParsedUciMove | null {
   return parsedMove;
 }
 
-export function replayGame(moves: readonly ParsedUciMove[]): Chess {
-  const game = new Chess();
+export function replayGame(
+  moves: readonly ParsedUciMove[],
+  initialFen = STARTING_POSITION_FEN,
+): Chess {
+  const game = new Chess(initialFen);
 
   for (const move of moves) {
     game.move(move);

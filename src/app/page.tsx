@@ -21,6 +21,7 @@ import {
   getUndoPlyCount,
   parseUciMove,
   replayGame,
+  STARTING_POSITION_FEN,
   shouldShowLoadingOverlay,
   shouldEngineMove,
   toWhiteCentipawns,
@@ -46,6 +47,9 @@ export default function Home() {
     resetEngine,
     searchBestMove,
   } = useChessEngine();
+  const [baseFen, setBaseFen] = useState(STARTING_POSITION_FEN);
+  const [fenDraft, setFenDraft] = useState(STARTING_POSITION_FEN);
+  const [isFenLoaderOpen, setIsFenLoaderOpen] = useState(false);
   const [playedMoves, setPlayedMoves] = useState<ParsedUciMove[]>([]);
   const [difficulty, setDifficulty] = useState<DifficultyKey>("medium");
   const [themeKey, setThemeKey] = useState<ThemeKey>("classic-wood");
@@ -58,7 +62,7 @@ export default function Home() {
 
   const theme = useMemo(() => getBoardTheme(themeKey), [themeKey]);
   const themeStyle = useMemo(() => getBoardThemeStyle(theme), [theme]);
-  const game = useMemo(() => replayGame(playedMoves), [playedMoves]);
+  const game = useMemo(() => replayGame(playedMoves, baseFen), [baseFen, playedMoves]);
   const history = useMemo(() => game.history({ verbose: true }) as Move[], [game]);
   const currentFen = game.fen();
   const lastMove = history.at(-1) ?? null;
@@ -88,6 +92,34 @@ export default function Home() {
   useEffect(() => {
     difficultyRef.current = difficulty;
   }, [difficulty]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.altKey && event.shiftKey && event.code === "KeyF")) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          target instanceof HTMLSelectElement ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      setIsFenLoaderOpen((currentValue) => !currentValue);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isReady) {
@@ -164,7 +196,7 @@ export default function Home() {
         }
 
         setPlayedMoves((currentMoves) => {
-          if (replayGame(currentMoves).fen() !== searchFen) {
+          if (replayGame(currentMoves, baseFen).fen() !== searchFen) {
             return currentMoves;
           }
 
@@ -180,7 +212,7 @@ export default function Home() {
           error instanceof Error ? error.message : "Failed to apply the engine response.",
         );
       });
-  }, [currentFen, isReady, result, searchBestMove]);
+  }, [baseFen, currentFen, isReady, result, searchBestMove]);
 
   const cancelPendingEngineWork = useCallback(() => {
     engineSearchIdRef.current += 1;
@@ -229,6 +261,8 @@ export default function Home() {
 
   const handleNewGame = useCallback(() => {
     cancelPendingEngineWork();
+    setBaseFen(STARTING_POSITION_FEN);
+    setFenDraft(STARTING_POSITION_FEN);
     setEvaluation(0);
     setPositionError(null);
     setPlayedMoves([]);
@@ -246,6 +280,29 @@ export default function Home() {
       currentMoves.slice(0, Math.max(0, currentMoves.length - undoPlyCount)),
     );
   }, [cancelPendingEngineWork, undoPlyCount]);
+
+  const handleLoadFen = useCallback(() => {
+    const nextFen = fenDraft.trim();
+
+    if (nextFen.length === 0) {
+      setPositionError("Enter a valid FEN before loading a custom position.");
+      return;
+    }
+
+    try {
+      const normalizedFen = new Chess(nextFen).fen();
+      cancelPendingEngineWork();
+      setBaseFen(normalizedFen);
+      setFenDraft(normalizedFen);
+      setEvaluation(null);
+      setPositionError(null);
+      setPlayedMoves([]);
+    } catch (error: unknown) {
+      setPositionError(
+        error instanceof Error ? error.message : "Failed to load the supplied FEN.",
+      );
+    }
+  }, [cancelPendingEngineWork, fenDraft]);
 
   return (
     <main className={styles.page} data-theme={theme.key} style={themeStyle}>
@@ -412,7 +469,20 @@ export default function Home() {
                   thinking, the current search is cancelled first.
                 </p>
               </div>
-              <div className={styles.selectorMeta}>History: {moveCount} ply</div>
+              <div className={styles.sectionActions}>
+                <div className={styles.selectorMeta}>History: {moveCount} ply</div>
+                <button
+                  aria-expanded={isFenLoaderOpen}
+                  aria-label="Toggle developer FEN loader"
+                  className={`${styles.devToggle} ${
+                    isFenLoaderOpen ? styles.devToggleActive : ""
+                  }`}
+                  onClick={() => setIsFenLoaderOpen((currentValue) => !currentValue)}
+                  type="button"
+                >
+                  <span aria-hidden="true">⚙</span>
+                </button>
+              </div>
             </div>
             <div className={styles.controlRow}>
               <button
@@ -427,6 +497,40 @@ export default function Home() {
                 New Game
               </button>
             </div>
+            {isFenLoaderOpen ? (
+              <div className={styles.fenDock}>
+                <div className={styles.fenDockHeader}>
+                  <div>
+                    <p className={styles.fenDockEyebrow}>Dev mode</p>
+                    <p className={styles.fenDockCopy}>
+                      Load a custom position for promotion or en passant checks.
+                    </p>
+                  </div>
+                  <span className={styles.fenShortcut}>⌥⇧F</span>
+                </div>
+                <label className={styles.fenLabel} htmlFor="fen-loader-input">
+                  Forsyth–Edwards Notation
+                </label>
+                <div className={styles.fenRow}>
+                  <input
+                    autoCapitalize="off"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    className={styles.fenInput}
+                    id="fen-loader-input"
+                    name="fen-loader-input"
+                    onChange={(event) => setFenDraft(event.target.value)}
+                    placeholder="Paste a FEN string"
+                    spellCheck={false}
+                    type="text"
+                    value={fenDraft}
+                  />
+                  <button className={styles.actionButton} onClick={handleLoadFen} type="button">
+                    Load FEN
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </section>
 
