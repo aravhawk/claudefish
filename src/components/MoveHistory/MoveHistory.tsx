@@ -29,18 +29,13 @@ export default function MoveHistory({ rows }: MoveHistoryProps) {
   return (
     <section className={styles.panel}>
       <div className={styles.header}>
-        <div>
-          <p className={styles.eyebrow}>Move history</p>
-          <h2 className={styles.title}>Algebraic notation</h2>
-        </div>
-        <span className={styles.meta}>
-          {rows.length} {rows.length === 1 ? "full move" : "full moves"}
-        </span>
+        <h2 className={styles.title}>Moves</h2>
+        <span className={styles.count}>{rows.length}</span>
       </div>
 
       <div className={styles.scrollArea} ref={scrollRef}>
         {rows.length === 0 ? (
-          <p className={styles.emptyState}>Moves will appear here after the game begins.</p>
+          <p className={styles.emptyState}>No moves yet</p>
         ) : (
           <ol className={styles.list}>
             {rows.map((row) => (

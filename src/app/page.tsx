@@ -4,7 +4,7 @@ import { Chess, type Move, type PieceSymbol, type Square } from "chess.js";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import Board from "@/components/Board/Board";
-import CapturedPieces from "@/components/CapturedPieces/CapturedPieces";
+import { getPieceGlyph, getPieceName } from "@/components/Board/boardUtils";
 import GameOverOverlay from "@/components/GameOverOverlay/GameOverOverlay";
 import MoveHistory from "@/components/MoveHistory/MoveHistory";
 import { useChessEngine } from "@/hooks/useChessEngine";
@@ -306,8 +306,7 @@ export default function Home() {
 
   return (
     <main className={styles.page} data-theme={theme.key} style={themeStyle}>
-      <div aria-hidden="true" className={styles.backdropGlow} />
-      <div aria-hidden="true" className={styles.backdropMesh} />
+      <div aria-hidden="true" className={styles.backdrop} />
 
       {showLoadingScreen ? (
         <div
@@ -317,14 +316,9 @@ export default function Home() {
           }`}
           role="status"
         >
-          <div className={styles.loadingPanel}>
-            <p className={styles.eyebrow}>Initializing Claudefish</p>
-            <h2 className={styles.loadingTitle}>{theme.loadingLabel}</h2>
-            <p className={styles.loadingCopy}>
-              Streaming the WebAssembly engine, preparing the board theme, and
-              bringing the controls online.
-            </p>
-
+          <div className={styles.loadingContent}>
+            <h2 className={styles.loadingLogo}>Claudefish</h2>
+            <p className={styles.loadingSubtitle}>{theme.loadingLabel}</p>
             <div aria-hidden="true" className={styles.loadingPreview}>
               {LOADING_PREVIEW_SQUARES.map((squareIndex) => (
                 <span
@@ -337,205 +331,184 @@ export default function Home() {
                 />
               ))}
             </div>
-
             <div className={styles.loadingStatusRow}>
-              <span aria-hidden="true" className={styles.loadingSpinner} />
-              <div>
-                <strong>WASM engine booting</strong>
-                <span className={styles.loadingStatusMeta}>
-                  The board will become interactive as soon as the worker is ready.
-                </span>
-              </div>
+              <span aria-hidden="true" className={styles.spinner} />
+              <span>Initializing engine</span>
             </div>
           </div>
         </div>
       ) : null}
 
-      <div className={styles.layout}>
-        <section className={`${styles.panel} ${styles.heroPanel}`}>
-          <p className={styles.eyebrow}>Claudefish</p>
-          <h1 className={styles.heroTitle}>Play against the engine in a polished match room.</h1>
-          <p className={styles.copy}>
-            Your moves are validated by <code>chess.js</code>, then Claudefish searches
-            for a reply in a Web Worker so the interface stays responsive while the
-            engine thinks. Switch themes at any moment without interrupting the
-            position, move list, captures, or evaluation.
-          </p>
-          <div className={styles.heroStats}>
-            <div className={styles.heroStat}>
-              <span className={styles.captionLabel}>You play</span>
-              <span className={styles.heroStatValue}>White</span>
-            </div>
-            <div className={styles.heroStat}>
-              <span className={styles.captionLabel}>Active theme</span>
-              <span className={styles.heroStatValue}>{theme.label}</span>
-            </div>
-            <div className={styles.heroStat}>
-              <span className={styles.captionLabel}>Current level</span>
-              <span className={styles.heroStatValue}>{difficultyConfig.label}</span>
-            </div>
-          </div>
-
-          <div className={styles.controlsBlock}>
-            <div className={styles.selectorHeader}>
-              <div>
-                <h2 className={styles.sectionTitle}>Board theme</h2>
-                <p className={styles.sectionCopy}>
-                  All colors update instantly while your current game stays exactly in
-                  place.
-                </p>
-              </div>
-              <div className={styles.selectorMeta}>3 curated looks</div>
-            </div>
-
-            <div className={styles.themeGrid}>
+      <header className={styles.topBar}>
+        <h1 className={styles.logo}>
+          <span aria-hidden="true" className={styles.logoIcon}>
+            ♔
+          </span>
+          Claudefish
+        </h1>
+        <nav className={styles.topBarControls} aria-label="Game controls">
+          <div className={styles.controlGroup} role="group" aria-label="Board theme">
+            <span className={styles.controlLabel}>Theme</span>
+            <div className={styles.themePills}>
               {BOARD_THEMES.map((option) => {
                 const isSelected = option.key === themeKey;
 
                 return (
                   <button
+                    aria-label={option.label}
                     aria-pressed={isSelected}
-                    className={`${styles.themeButton} ${
-                      isSelected ? styles.themeButtonActive : ""
+                    className={`${styles.themePill} ${
+                      isSelected ? styles.themePillActive : ""
                     }`}
                     key={option.key}
                     onClick={() => setThemeKey(option.key)}
                     style={
                       {
-                        "--theme-preview-light": option.colors.squareLight,
-                        "--theme-preview-dark": option.colors.squareDark,
-                        "--theme-preview-accent": option.colors.accentStrong,
+                        "--swatch-light": option.colors.squareLight,
+                        "--swatch-dark": option.colors.squareDark,
                       } as CSSProperties
                     }
+                    title={option.label}
                     type="button"
                   >
-                    <span aria-hidden="true" className={styles.themePreview}>
-                      <span className={styles.themePreviewLight} />
-                      <span className={styles.themePreviewDark} />
-                      <span className={styles.themePreviewAccent} />
-                    </span>
-                    <span className={styles.themeButtonBody}>
-                      <span className={styles.themeLabel}>{option.label}</span>
-                      <span className={styles.themeMood}>{option.mood}</span>
-                      <span className={styles.themeDescription}>{option.description}</span>
-                    </span>
+                    <span aria-hidden="true" className={styles.swatch} />
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div className={styles.selectorHeader}>
-            <div>
-              <h2 className={styles.sectionTitle}>Difficulty</h2>
-              <p className={styles.sectionCopy}>
-                Switching levels mid-game takes effect on the next engine move.
-              </p>
-            </div>
-            <div className={styles.selectorMeta}>
-              Depth {difficultyConfig.depth} · {formatTime(difficultyConfig.timeMs)}
-            </div>
-          </div>
-          <div className={styles.difficultyGrid}>
-            {DIFFICULTY_LEVELS.map((option) => {
-              const isSelected = option.key === difficulty;
+          <div className={styles.controlGroup} role="group" aria-label="Difficulty">
+            <span className={styles.controlLabel}>Level</span>
+            <div className={styles.difficultyPills}>
+              {DIFFICULTY_LEVELS.map((option) => {
+                const isSelected = option.key === difficulty;
 
-              return (
-                <button
-                  aria-pressed={isSelected}
-                  className={`${styles.difficultyButton} ${
-                    isSelected ? styles.difficultyButtonActive : ""
-                  }`}
-                  key={option.key}
-                  onClick={() => setDifficulty(option.key)}
-                  type="button"
-                >
-                  <span className={styles.difficultyLabel}>{option.label}</span>
-                  <span className={styles.difficultyHint}>
-                    Depth {option.depth} · {formatTime(option.timeMs)}
-                  </span>
-                  <span className={styles.difficultySummary}>{option.summary}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className={styles.controlsBlock}>
-            <div className={styles.selectorHeader}>
-              <div>
-                <h2 className={styles.sectionTitle}>Game controls</h2>
-                <p className={styles.sectionCopy}>
-                  Undo rewinds the latest player/engine exchange. If Claudefish is
-                  thinking, the current search is cancelled first.
-                </p>
-              </div>
-              <div className={styles.sectionActions}>
-                <div className={styles.selectorMeta}>History: {moveCount} ply</div>
-                <button
-                  aria-expanded={isFenLoaderOpen}
-                  aria-label="Toggle developer FEN loader"
-                  className={`${styles.devToggle} ${
-                    isFenLoaderOpen ? styles.devToggleActive : ""
-                  }`}
-                  onClick={() => setIsFenLoaderOpen((currentValue) => !currentValue)}
-                  type="button"
-                >
-                  <span aria-hidden="true">⚙</span>
-                </button>
-              </div>
-            </div>
-            <div className={styles.controlRow}>
-              <button
-                className={styles.actionButton}
-                disabled={undoPlyCount === 0}
-                onClick={handleUndo}
-                type="button"
-              >
-                Undo
-              </button>
-              <button className={styles.actionButton} onClick={handleNewGame} type="button">
-                New Game
-              </button>
-            </div>
-            {isFenLoaderOpen ? (
-              <div className={styles.fenDock}>
-                <div className={styles.fenDockHeader}>
-                  <div>
-                    <p className={styles.fenDockEyebrow}>Dev mode</p>
-                    <p className={styles.fenDockCopy}>
-                      Load a custom position for promotion or en passant checks.
-                    </p>
-                  </div>
-                  <span className={styles.fenShortcut}>⌥⇧F</span>
-                </div>
-                <label className={styles.fenLabel} htmlFor="fen-loader-input">
-                  Forsyth–Edwards Notation
-                </label>
-                <div className={styles.fenRow}>
-                  <input
-                    autoCapitalize="off"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    className={styles.fenInput}
-                    id="fen-loader-input"
-                    name="fen-loader-input"
-                    onChange={(event) => setFenDraft(event.target.value)}
-                    placeholder="Paste a FEN string"
-                    spellCheck={false}
-                    type="text"
-                    value={fenDraft}
-                  />
-                  <button className={styles.actionButton} onClick={handleLoadFen} type="button">
-                    Load FEN
+                return (
+                  <button
+                    aria-pressed={isSelected}
+                    className={`${styles.diffPill} ${
+                      isSelected ? styles.diffPillActive : ""
+                    }`}
+                    key={option.key}
+                    onClick={() => setDifficulty(option.key)}
+                    title={`${option.label} — Depth ${option.depth}, ${formatTime(option.timeMs)}`}
+                    type="button"
+                  >
+                    {option.label}
                   </button>
-                </div>
-              </div>
-            ) : null}
+                );
+              })}
+            </div>
           </div>
-        </section>
 
-        <section className={styles.boardColumn}>
-          <div className={styles.boardStage}>
+          <div className={styles.actionGroup}>
+            <button
+              className={styles.actionBtn}
+              disabled={undoPlyCount === 0}
+              onClick={handleUndo}
+              title="Undo last move"
+              type="button"
+            >
+              Undo
+            </button>
+            <button
+              className={styles.actionBtn}
+              onClick={handleNewGame}
+              title="Start new game"
+              type="button"
+            >
+              New
+            </button>
+            <button
+              aria-expanded={isFenLoaderOpen}
+              aria-label="Toggle developer FEN loader"
+              className={`${styles.devBtn} ${
+                isFenLoaderOpen ? styles.devBtnActive : ""
+              }`}
+              onClick={() => setIsFenLoaderOpen((currentValue) => !currentValue)}
+              title="FEN loader (⌥⇧F)"
+              type="button"
+            >
+              <span aria-hidden="true">⚙</span>
+            </button>
+          </div>
+        </nav>
+      </header>
+
+      {isFenLoaderOpen ? (
+        <div className={styles.fenDock}>
+          <label className={styles.fenLabel} htmlFor="fen-loader-input">
+            FEN
+          </label>
+          <input
+            autoCapitalize="off"
+            autoComplete="off"
+            autoCorrect="off"
+            className={styles.fenInput}
+            id="fen-loader-input"
+            name="fen-loader-input"
+            onChange={(event) => setFenDraft(event.target.value)}
+            placeholder="Paste a FEN string"
+            spellCheck={false}
+            type="text"
+            value={fenDraft}
+          />
+          <button className={styles.fenLoadBtn} onClick={handleLoadFen} type="button">
+            Load
+          </button>
+          <span className={styles.fenShortcut}>⌥⇧F</span>
+        </div>
+      ) : null}
+
+      <div className={styles.gameArea}>
+        <div className={styles.boardColumn}>
+          <div className={styles.playerBar}>
+            <div className={styles.playerInfo}>
+              <span
+                className={`${styles.playerAvatar} ${styles.avatarBlack}`}
+                aria-hidden="true"
+              >
+                ♚
+              </span>
+              <span className={styles.playerName}>Claudefish</span>
+              <span className={styles.playerTag}>{difficultyConfig.label}</span>
+              {isThinking ? (
+                <span className={styles.thinkingDot} aria-label="Thinking" />
+              ) : null}
+            </div>
+            <div className={styles.captures} aria-label="Pieces captured by Black">
+              {capturedPieces.black.map((piece, index) => (
+                <span
+                  aria-label={getPieceName(piece)}
+                  className={`${styles.capturedPiece} ${
+                    piece === piece.toUpperCase() ? styles.capWhite : styles.capBlack
+                  }`}
+                  key={`bc-${piece}-${index}`}
+                >
+                  {getPieceGlyph(piece)}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.boardRow}>
+            <div
+              aria-label={`Evaluation bar: ${evaluationLabel}`}
+              className={styles.evalBar}
+              style={
+                {
+                  "--eval-fill": `${evaluationFill}%`,
+                } as CSSProperties
+              }
+            >
+              <div className={styles.evalTrack}>
+                <div className={styles.evalBlackFill} />
+                <div className={styles.evalWhiteFill} />
+                <div className={styles.evalDivider} />
+              </div>
+              <span className={styles.evalLabel}>{evaluationLabel}</span>
+            </div>
             <div className={styles.boardSurface}>
               <Board
                 disabled={boardDisabled}
@@ -547,107 +520,53 @@ export default function Home() {
                 <GameOverOverlay onNewGame={handleNewGame} result={result} />
               ) : null}
             </div>
-            {isThinking ? (
-              <div className={styles.thinkingBadge}>
-                <span aria-hidden="true" className={styles.spinner} />
-                <div>
-                  <strong>Claudefish is thinking…</strong>
-                  <span className={styles.thinkingMeta}>
-                    {difficultyConfig.label} · Depth {difficultyConfig.depth} ·{" "}
-                    {formatTime(difficultyConfig.timeMs)}
-                  </span>
-                </div>
-              </div>
-            ) : null}
           </div>
 
-          <div className={`${styles.panel} ${styles.boardCaption}`}>
-            <div>
-              <span className={styles.captionLabel}>Status</span>
-              <span className={styles.captionValue}>{statusLabel}</span>
-            </div>
-            <div>
-              <span className={styles.captionLabel}>Evaluation</span>
-              <span className={styles.captionValue}>{evaluationLabel}</span>
-            </div>
-            <div>
-              <span className={styles.captionLabel}>Last move</span>
-              <span className={styles.captionValue}>{lastMove?.san ?? "None yet"}</span>
-            </div>
-            <div>
-              <span className={styles.captionLabel}>Moves played</span>
-              <span className={styles.captionValue}>{moveCount}</span>
-            </div>
-            <div className={styles.captionWide}>
-              <span className={styles.captionLabel}>Engine state</span>
-              <span className={styles.captionValue}>
-                {isReady
-                  ? isThinking
-                    ? "Searching in the worker thread."
-                    : shouldEngineMove(currentFen) && result === null
-                      ? "Awaiting a queued engine reply."
-                      : "Ready for the next move."
-                  : "Initializing the WebAssembly engine…"}
-              </span>
-            </div>
-          </div>
-        </section>
-
-        <aside className={styles.sideColumn}>
-          <section className={`${styles.panel} ${styles.historyPanel}`}>
-            <MoveHistory rows={historyRows} />
-          </section>
-
-          <section className={`${styles.panel} ${styles.capturePanel}`}>
-            <CapturedPieces captures={capturedPieces} />
-          </section>
-
-          <section className={`${styles.panel} ${styles.evalPanel}`}>
-            <div className={styles.evalHeader}>
-              <div>
-                <p className={styles.eyebrow}>Evaluation</p>
-                <h2 className={styles.sectionTitle}>Position balance</h2>
-              </div>
-              <div className={styles.evalValue}>{evaluationLabel}</div>
-            </div>
-
-            <div className={styles.evalLayout}>
-              <div
-                aria-label={`Evaluation bar ${evaluationLabel}`}
-                className={styles.evalBar}
-                style={
-                  {
-                    "--eval-fill": `${evaluationFill}%`,
-                  } as CSSProperties
-                }
+          <div className={styles.playerBar}>
+            <div className={styles.playerInfo}>
+              <span
+                className={`${styles.playerAvatar} ${styles.avatarWhite}`}
+                aria-hidden="true"
               >
-                <div className={styles.evalBarBlack} />
-                <div className={styles.evalBarWhite} />
-                <div className={styles.evalDivider} />
-              </div>
-
-              <div className={styles.evalNotes}>
-                <p className={styles.evalCopy}>
-                  Positive values favor White. Mate scores are shown as <code>M#</code>{" "}
-                  instead of raw centipawns.
-                </p>
-                <p className={styles.evalCopy}>
-                  The bar updates after each move while the engine continues searching in a
-                  non-blocking worker.
-                </p>
-              </div>
+                ♔
+              </span>
+              <span className={styles.playerName}>You</span>
             </div>
-          </section>
+            <div className={styles.captures} aria-label="Pieces captured by White">
+              {capturedPieces.white.map((piece, index) => (
+                <span
+                  aria-label={getPieceName(piece)}
+                  className={`${styles.capturedPiece} ${
+                    piece === piece.toUpperCase() ? styles.capWhite : styles.capBlack
+                  }`}
+                  key={`wc-${piece}-${index}`}
+                >
+                  {getPieceGlyph(piece)}
+                </span>
+              ))}
+            </div>
+          </div>
 
-          {positionError !== null || engineError !== null ? (
-            <section className={`${styles.panel} ${styles.detailPanel}`}>
-              <p className={styles.eyebrow}>Engine status</p>
-              <h2 className={styles.sectionTitle}>Attention needed</h2>
-              <p className={styles.errorText}>{positionError ?? engineError}</p>
-            </section>
-          ) : null}
+          <div className={styles.statusLine}>
+            {isThinking ? (
+              <span aria-hidden="true" className={styles.spinner} />
+            ) : null}
+            <span className={styles.statusText}>{statusLabel}</span>
+            <span className={styles.statusEval}>{evaluationLabel}</span>
+          </div>
+        </div>
+
+        <aside className={styles.movePanel}>
+          <MoveHistory rows={historyRows} />
         </aside>
       </div>
+
+      {positionError !== null || engineError !== null ? (
+        <div className={styles.errorToast} role="alert">
+          <span aria-hidden="true" className={styles.errorDot} />
+          <span>{positionError ?? engineError}</span>
+        </div>
+      ) : null}
     </main>
   );
 }

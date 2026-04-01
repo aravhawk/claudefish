@@ -1,23 +1,29 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display } from "next/font/google";
+import { Fraunces, JetBrains_Mono, Outfit } from "next/font/google";
 
 import "./globals.css";
 
-const inter = Inter({
+const outfit = Outfit({
   subsets: ["latin"],
   variable: "--font-body",
   display: "swap",
 });
 
-const playfairDisplay = Playfair_Display({
+const fraunces = Fraunces({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
 });
 
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: "Claudefish",
-  description: "Premium WebAssembly chess against the Claudefish engine",
+  description: "Play chess against the Claudefish WebAssembly engine",
 };
 
 export default function RootLayout({
@@ -27,7 +33,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} ${playfairDisplay.variable}`}>{children}</body>
+      <body className={`${outfit.variable} ${fraunces.variable} ${jetbrainsMono.variable}`}>
+        {children}
+      </body>
     </html>
   );
 }

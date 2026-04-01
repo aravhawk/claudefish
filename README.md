@@ -1,62 +1,43 @@
-# Claudefish — A Chess Engine & Web Interface
+# Claudefish
 
-A chess engine written from scratch in C, compiled to WebAssembly via Emscripten, and embedded in a premium Next.js chess-playing website. No Stockfish code — this is an original engine targeting ~2800–3200 ELO classical strength.
-
-## Overview
-
-Claudefish is a full-stack chess project consisting of two major components:
-
-1. **A C chess engine** built from the ground up with modern techniques — bitboard representation, magic bitboards, PVS search, and tapered evaluation.
-2. **A polished web interface** powered by Next.js, where users can play against the engine directly in their browser via WebAssembly.
-
-The engine runs entirely client-side in a Web Worker, keeping the UI responsive while computing moves.
+A chess engine written from scratch in C, compiled to WebAssembly, and playable in the browser through a Next.js interface. No Stockfish code — this is an original engine targeting ~2800-3200 ELO classical strength.
 
 ## Features
 
 ### Engine
 
-- **Bitboard representation** with 12 bitboards (one per piece type/color) plus mailbox redundancy for O(1) lookups
-- **Magic bitboards** for sliding piece attack generation
-- **Alpha-beta with Principal Variation Search (PVS)** and iterative deepening
+- **Bitboard representation** with magic bitboards for sliding piece attack generation
+- **Alpha-beta with PVS** and iterative deepening
 - **Quiescence search** to avoid horizon effects
-- **Null move pruning** and **Late Move Reductions (LMR)** for search efficiency
-- **Transposition tables** with Zobrist hashing (exact/alpha/beta node types)
-- **Move ordering**: TT move → MVV-LVA captures → killer moves → history heuristic
-- **Tapered evaluation** interpolating between middlegame and endgame scores:
-  - Material values and piece-square tables
-  - Pawn structure analysis
-  - King safety
-  - Mobility evaluation
-- **Polyglot opening book** for varied opening play
-- **Draw detection** (threefold repetition, fifty-move rule, insufficient material, stalemate)
-- **Time management** with support for fixed depth and fixed time modes
+- **Null move pruning** and **Late Move Reductions (LMR)**
+- **Transposition tables** with Zobrist hashing
+- **Move ordering**: TT move, MVV-LVA captures, killer moves, history heuristic
+- **Tapered evaluation** (middlegame/endgame interpolation): material, piece-square tables, pawn structure, king safety, mobility
+- **Polyglot opening book** for varied play
+- **Draw detection**: threefold repetition, fifty-move rule, insufficient material, stalemate
+- **Time management** with fixed depth and fixed time modes
 
-### Website
+### Interface
 
-- 2D chess board with **drag-and-drop** and **click-to-move** interaction
-- **Legal move highlights** on piece selection
-- **4 difficulty levels** controlling search depth and time allocation
-- **Move history** displayed in algebraic notation
-- **Captured pieces** display
-- **Undo move** and **New Game** controls
-- **Evaluation bar** showing the engine's assessment of the position
-- **Thinking indicator** while the engine computes
-- **3 premium themes**:
-  - Classic Wood — warm wood tones
-  - Dark Marble — dark, elegant marble textures
-  - Light Minimalist — clean, modern light design
-- **Responsive layout** adapting to different screen sizes
+- Drag-and-drop and click-to-move interaction with legal move indicators
+- 4 difficulty levels (Easy through Maximum) controlling search depth and time
+- Move history in algebraic notation
+- Evaluation bar alongside the board
+- Inline captured pieces on player bars
+- Undo, new game, and FEN position loading (Alt+Shift+F)
+- 3 themes: Classic Wood, Dark Marble, Light Minimalist
+- Responsive layout for desktop, tablet, and mobile
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Engine | C (original, no Stockfish code) |
-| Compilation | Emscripten → WebAssembly |
-| Frontend | Next.js 16 (App Router + Turbopack) |
+|---|---|
+| Engine | C (original) |
+| Compilation | Emscripten -> WebAssembly |
+| Frontend | Next.js 16 (App Router, Turbopack) |
 | Language | TypeScript |
 | Game Logic | chess.js |
-| Worker Communication | Comlink |
+| Worker Bridge | Comlink |
 | Concurrency | Web Workers |
 
 ## Getting Started
@@ -70,91 +51,46 @@ The engine runs entirely client-side in a Web Worker, keeping the UI responsive 
 ### Setup
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-username/claudefish.git
+# Clone and enter the project
+git clone git@github.com:aravhawk/claudefish.git
 cd claudefish
 
-# 2. Run the init script (installs emsdk locally + pnpm dependencies)
+# Install Emscripten SDK + pnpm dependencies
 .factory/init.sh
 
-# 3. Build the engine (WASM)
+# Build the WASM engine
 source ./emsdk/emsdk_env.sh && ./scripts/build-engine.sh
 
-# 4. Start the development server
+# Start the dev server
 pnpm dev --turbopack --port 3001
-
-# 5. Open in your browser
-# http://localhost:3001
 ```
+
+Open [http://localhost:3001](http://localhost:3001) in your browser.
 
 ## Project Structure
 
 ```
 claudefish/
 ├── engine/
-│   ├── src/           # C engine source files
-│   │   ├── bitboard.c/h    # Bitboard utilities
-│   │   ├── movegen.c/h     # Move generation (magic bitboards)
-│   │   ├── search.c/h      # Alpha-beta / PVS search
-│   │   ├── evaluate.c/h    # Tapered evaluation
-│   │   ├── position.c/h    # Board state management
-│   │   ├── tt.c/h          # Transposition table
-│   │   ├── book.c/h        # Polyglot opening book
-│   │   ├── draw.c/h        # Draw detection
-│   │   ├── time.c/h        # Time management
-│   │   ├── movorder.c/h    # Move ordering heuristics
-│   │   ├── zobrist.c/h     # Zobrist hashing
-│   │   ├── engine.c/h      # Top-level engine API
-│   │   └── types.h         # Shared type definitions
-│   ├── tests/         # C test files (perft, search, evaluation)
-│   └── book/          # Opening book data
+│   ├── src/              # C engine source (bitboard, search, eval, etc.)
+│   ├── tests/            # C test suite (perft, search, evaluation)
+│   └── book/             # Polyglot opening book (rodent.bin)
 ├── src/
-│   ├── app/           # Next.js App Router pages and layouts
-│   ├── components/    # React components
-│   │   ├── Board/           # Chess board rendering
-│   │   ├── CapturedPieces/  # Captured pieces display
-│   │   ├── GameOverOverlay/ # Game over UI
-│   │   └── MoveHistory/     # Move history panel
-│   ├── hooks/         # React hooks
-│   │   └── useChessEngine.ts  # Engine integration hook
-│   ├── types/         # TypeScript type definitions
-│   └── workers/       # Web Worker for WASM engine
-├── public/engine/     # Compiled WASM artifacts (engine.js + engine.wasm)
-├── scripts/           # Build scripts
-│   └── build-engine.sh
-├── tests/             # Integration and frontend tests
-└── emsdk/             # Emscripten SDK (local install)
-```
-
-## Testing
-
-### Engine Tests (C)
-
-```bash
-gcc -O2 -o /tmp/claudefish_test engine/src/*.c engine/tests/*.c -lm && /tmp/claudefish_test
-```
-
-### Integration & Frontend Tests
-
-```bash
-pnpm test
-```
-
-### TypeScript Type Checking
-
-```bash
-pnpm typecheck
-```
-
-### Linting
-
-```bash
-pnpm lint
+│   ├── app/              # Next.js App Router (page, layout, themes, game logic)
+│   ├── components/
+│   │   ├── Board/        # Chess board rendering, drag/drop, promotion
+│   │   ├── GameOverOverlay/
+│   │   └── MoveHistory/
+│   ├── hooks/            # useChessEngine hook (Comlink + Worker lifecycle)
+│   ├── types/            # Engine type definitions
+│   └── workers/          # Web Worker for WASM engine
+├── public/engine/        # Compiled WASM artifacts (engine.js + engine.wasm)
+├── scripts/
+│   └── build-engine.sh   # Emscripten build script
+└── tests/                # Integration tests (WASM, game utils, board, themes)
 ```
 
 ## Architecture
-
-Claudefish uses a **three-layer architecture**:
 
 ```
 ┌─────────────────────────────────┐
@@ -169,18 +105,26 @@ Claudefish uses a **three-layer architecture**:
 └─────────────────────────────────┘
 ```
 
-**Data flow:**
+1. User moves a piece -> chess.js validates -> board re-renders
+2. Current FEN is sent to the Web Worker via Comlink
+3. Worker calls WASM: `set_position(fen)` then `search_best_move(depth, time_ms)`
+4. Engine returns the best move as a UCI string (e.g. `e2e4`)
+5. chess.js applies the engine's move -> board re-renders
 
-1. User interacts with the board → **chess.js** validates the move → board re-renders
-2. After the user's move, the current FEN is sent to the **Web Worker** via Comlink
-3. The Worker calls the **WASM engine**: `set_position(fen)` → `search_best_move(depth, time_ms)`
-4. The engine searches and returns the best move as a UCI string (e.g., `e2e4`)
-5. The Worker returns the move to the main thread via Comlink promise resolution
-6. **chess.js** applies the engine's move → board re-renders
+The engine never runs on the main thread. Game state is derived from a `(baseFen, playedMoves[])` pair — the `Chess` instance is always rebuilt by replaying moves, never stored as state.
 
-**Key invariants:**
+## Testing
 
-- The engine never runs on the main thread — always in a Web Worker
-- chess.js is the source of truth for game state on the frontend
-- The WASM module is stateful — `set_position` must precede each search
-- All WASM files are served from `public/engine/` as static assets
+```bash
+# Integration & frontend tests (36 tests)
+pnpm test
+
+# TypeScript type checking
+pnpm typecheck
+
+# Linting
+pnpm lint
+
+# C engine tests
+gcc -O2 -o /tmp/claudefish_test engine/src/*.c engine/tests/*.c -lm && /tmp/claudefish_test
+```
