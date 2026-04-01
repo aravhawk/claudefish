@@ -25,7 +25,11 @@
 - Start the app with `pnpm dev --turbopack --port 3001`.
 - Wait for `curl -sf http://localhost:3001` to succeed before launching browser validators.
 - Website validators should use isolated browser sessions against the shared local app; the application keeps game state in browser memory, so separate sessions avoid cross-test interference.
-- The public website surface currently exposes theme controls, difficulty selection, Undo, and New Game, but no board editor or FEN loader. Promotion and en-passant assertions may therefore remain blocked unless live engine play naturally reaches those prerequisites.
+- The website now exposes a hidden dev-mode FEN loader for deterministic special-move setup. Open it with the gear button labeled `Toggle developer FEN loader` or the `⌥⇧F` shortcut, enter a FEN into `fen-loader-input`, and click `Load FEN`.
+- Use the FEN loader for promotion and en-passant assertions instead of waiting for the engine to cooperate in live play. Example validation positions:
+  - Promotion: `6k1/4P3/8/8/8/8/8/6K1 w - - 0 1`
+  - En passant: `6k1/8/8/3pP3/8/8/8/6K1 w - d6 0 1`
+- Loading a FEN resets the board state, move history, captured pieces, and evaluation to the supplied position while preserving the shared app surface on `http://localhost:3001`.
 - Repository root remains the isolation boundary; validators must only write reports/evidence in assigned `.factory/validation/...` and mission evidence paths.
 
 ## Flow Validator Guidance: test-runner

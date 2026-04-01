@@ -1,0 +1,128 @@
+{
+  "groupId": "g6-special-moves-rerun",
+  "testedAt": "2026-04-01T04:30:01.388302+00:00",
+  "isolation": {
+    "appUrl": "http://localhost:3001",
+    "browserSession": "87135cb64abd__g6",
+    "scope": "Single isolated agent-browser session against the shared localhost:3001 app; only in-browser game state was mutated."
+  },
+  "toolsUsed": [
+    "agent-browser"
+  ],
+  "assertions": [
+    {
+      "id": "VAL-BOARD-008",
+      "title": "Promotion Dialog",
+      "status": "pass",
+      "reason": "Pass \u2014 loading the supplied promotion FEN, moving the white pawn from e7 to e8, and selecting a promotion piece produced a modal with four white-piece choices, blocked other board interaction until a choice was made, and completed promotion correctly on the board.",
+      "steps": [
+        {
+          "action": "Open the hidden FEN loader, enter `6k1/4P3/8/8/8/8/8/6K1 w - - 0 1`, and load it",
+          "expected": "A deterministic promotion-ready position appears with a white pawn on e7 and kings on g8/g1",
+          "observed": "The board showed `black king on g8`, `white pawn on e7`, and `white king on g1`."
+        },
+        {
+          "action": "Move the white pawn from e7 to e8",
+          "expected": "A promotion dialog appears with four promotion choices matching White",
+          "observed": "A promotion dialog appeared with four options rendered as `\u2655 queen`, `\u2656 rook`, `\u2657 bishop`, and `\u2658 knight`."
+        },
+        {
+          "action": "Try another interaction while the dialog is open",
+          "expected": "The modal blocks other interaction until a promotion piece is chosen",
+          "observed": "Board squares were disabled in the snapshot, and a click on `New Game` was rejected with `Element \"@e10\" is blocked by another element` while the dialog remained open."
+        },
+        {
+          "action": "Choose the knight promotion option",
+          "expected": "The pawn is replaced by the selected piece on e8 and the dialog closes",
+          "observed": "The dialog closed, the board showed `white knight on e8` instead of a pawn, and move history recorded `1. e8=N`."
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "website/g6-special-moves-rerun/promotion-fen-loaded.png",
+          "website/g6-special-moves-rerun/promotion-dialog.png",
+          "website/g6-special-moves-rerun/promotion-after-knight-selection.png"
+        ],
+        "consoleErrors": "none",
+        "runtimeErrors": "none",
+        "stateComparison": {
+          "beforePromotion": [
+            "black king on g8",
+            "white pawn on e7",
+            "white king on g1"
+          ],
+          "dialogOptions": [
+            "\u2655 queen",
+            "\u2656 rook",
+            "\u2657 bishop",
+            "\u2658 knight"
+          ],
+          "modalBlocking": "Board squares were disabled while the dialog was open, and toolbar click attempts were blocked by the modal overlay.",
+          "afterPromotion": [
+            "white knight on e8",
+            "black king on g8",
+            "white king on g1"
+          ],
+          "moveHistory": "1. e8=N",
+          "postPromotionStatus": "Game over \u2014 Insufficient material \u2014 Draw"
+        }
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-BOARD-010",
+      "title": "En Passant Removes Correct Pawn",
+      "status": "pass",
+      "reason": "Pass \u2014 loading the supplied en-passant FEN and capturing from e5 to d6 removed the black pawn from d5 and left the white pawn on d6, matching en-passant rules.",
+      "steps": [
+        {
+          "action": "Enter `6k1/8/8/3pP3/8/8/8/6K1 w - d6 0 1` in the FEN loader and load it",
+          "expected": "The board shows a black pawn on d5, a white pawn on e5, and an en-passant target on d6",
+          "observed": "The board showed `black king on g8`, `black pawn on d5`, `white pawn on e5`, and `white king on g1`."
+        },
+        {
+          "action": "Move the white pawn from e5 to d6",
+          "expected": "The white pawn lands on d6 and the black pawn from d5 is removed",
+          "observed": "After the move, the board no longer contained a black pawn on d5 and showed `white pawn on d6`; the engine then quickly replied with `black king on f7`."
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "website/g6-special-moves-rerun/en-passant-fen-loaded.png",
+          "website/g6-special-moves-rerun/en-passant-after-capture.png"
+        ],
+        "consoleErrors": "none",
+        "runtimeErrors": "none",
+        "stateComparison": {
+          "beforeCapture": [
+            "black king on g8",
+            "black pawn on d5",
+            "white pawn on e5",
+            "white king on g1"
+          ],
+          "afterCapture": [
+            "black king on f7",
+            "white pawn on d6",
+            "white king on g1"
+          ],
+          "removedPiece": "The black pawn that began on d5 was absent after the capture.",
+          "capturingPawn": "The white pawn moved diagonally from e5 to d6 as expected for en passant.",
+          "note": "The engine replied quickly after the player's move, but the captured post-move board still clearly showed the correct en-passant result."
+        }
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "The engine replied quickly after the en-passant capture, so the post-capture screenshot already included Black's response move.",
+      "resolved": true,
+      "resolution": "Used the before/after piece-state comparison to confirm that the black pawn from d5 was removed and the white pawn remained on d6 despite the immediate reply.",
+      "affectedAssertions": [
+        "VAL-BOARD-010"
+      ]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 2 assertions: 2 passed. Promotion displayed a blocking four-choice white promotion dialog and completed correctly after selection; en passant removed the pawn from d5 and left the white pawn on d6, with no console or runtime errors observed."
+}
