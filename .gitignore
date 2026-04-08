@@ -4,7 +4,5 @@ node_modules/
 out/
 /tmp/
 *.o
-*.wasm
 *.tsbuildinfo
-public/engine/engine.js
-public/engine/engine.wasm
+.DS_Store
