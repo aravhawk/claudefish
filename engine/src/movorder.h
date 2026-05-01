@@ -21,6 +21,7 @@ void movorder_score_moves(
     Move tt_move,
     Move killer_one,
     Move killer_two,
+    Move countermove,
     const int history[2][BOARD_SQUARES][BOARD_SQUARES],
     OrderedMoveList *ordered
 );

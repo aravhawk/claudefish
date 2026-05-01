@@ -42,6 +42,10 @@ static const int queen_mobility_eg[28] = {
 static const int king_mobility_mg[9] = { -8, -5, -2, 0, 2, 3, 4, 5, 6 };
 static const int king_mobility_eg[9] = { -4, -1, 2, 5, 8, 11, 14, 17, 20 };
 static const int attacker_count_bonus[9] = { 0, 0, 12, 24, 36, 48, 60, 72, 84 };
+static const int attack_weights[PIECE_TYPE_NB] = { 0, 1, 1, 2, 4, 0 };
+static const int attack_weight_bonus[17] = {
+    0, 0, 0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280
+};
 
 static bool eval_initialized = false;
 static int16_t pst_mg[PIECE_TYPE_NB][BOARD_SQUARES];
@@ -527,10 +531,11 @@ static void eval_add_king_safety_side(const Position *pos, Color side, int *mg_s
     Bitboard enemy_rooks = pos->piece_bitboards[piece_bitboard_index(make_piece(side == WHITE ? BLACK : WHITE, ROOK))];
     Bitboard enemy_queens = pos->piece_bitboards[piece_bitboard_index(make_piece(side == WHITE ? BLACK : WHITE, QUEEN))];
     Bitboard enemy_pieces;
+    Bitboard king_zone;
     int king_square = bitboard_lsb(pos->piece_bitboards[piece_bitboard_index(make_piece(side, KING))]);
     int king_file;
-    int attacker_count = 0;
-    int attack_weight = 0;
+    int king_rank;
+    int weighted_attack = 0;
     int sign = side == WHITE ? 1 : -1;
     int file;
 
@@ -539,7 +544,12 @@ static void eval_add_king_safety_side(const Position *pos, Color side, int *mg_s
     }
 
     king_file = bitboard_file_of(king_square);
+    king_rank = bitboard_rank_of(king_square);
 
+    /* King zone: king attacks + king square + extended zone */
+    king_zone = movegen_king_attacks[king_square] | BITBOARD_FROM_SQUARE(king_square);
+
+    /* Pawn shield bonus for castled king */
     if (eval_side_has_castled_king(side, king_square)) {
         int forward = side == WHITE ? 1 : -1;
         int base_rank = bitboard_rank_of(king_square);
@@ -557,16 +567,17 @@ static void eval_add_king_safety_side(const Position *pos, Color side, int *mg_s
 
             if (first_rank >= 0 && first_rank < 8 &&
                 position_get_piece(pos, bitboard_make_square(file, first_rank)) == make_piece(side, PAWN)) {
-                *mg_score += sign * 12;
+                *mg_score += sign * 14;
             }
 
             if (second_rank >= 0 && second_rank < 8 &&
                 position_get_piece(pos, bitboard_make_square(file, second_rank)) == make_piece(side, PAWN)) {
-                *mg_score += sign * 6;
+                *mg_score += sign * 7;
             }
         }
     }
 
+    /* Open/semi-open files near king */
     for (file = king_file - 1; file <= king_file + 1; ++file) {
         bool has_friendly_pawn;
 
@@ -582,50 +593,68 @@ static void eval_add_king_safety_side(const Position *pos, Color side, int *mg_s
         }
     }
 
+    /* Pawn storm detection: enemy pawns advancing toward our king */
+    {
+        int direction = side == WHITE ? 1 : -1;
+        int king_rel_rank = side == WHITE ? king_rank : 7 - king_rank;
+        Bitboard storm_pawns = 0;
+
+        for (file = king_file - 1; file <= king_file + 1; ++file) {
+            if (file < 0 || file > 7) continue;
+
+            storm_pawns = enemy_pawns & file_masks[file];
+            while (storm_pawns != 0) {
+                int sq = bitboard_pop_lsb(&storm_pawns);
+                int rel_rank = side == WHITE ? bitboard_rank_of(sq) : 7 - bitboard_rank_of(sq);
+                int distance = king_rel_rank - rel_rank;
+
+                if (distance > 0 && distance <= 3) {
+                    *mg_score -= sign * (20 - distance * 5);
+                }
+            }
+        }
+    }
+
+    /* Weighted attack counting using attack_weights table */
     enemy_pieces = enemy_knights;
     while (enemy_pieces != 0) {
         int square = bitboard_pop_lsb(&enemy_pieces);
-        if ((movegen_knight_attacks[square] & (movegen_king_attacks[king_square] | BITBOARD_FROM_SQUARE(king_square))) != 0) {
-            ++attacker_count;
-            attack_weight += 20;
+        if ((movegen_knight_attacks[square] & king_zone) != 0) {
+            weighted_attack += attack_weights[KNIGHT] * 20;
         }
     }
 
     enemy_pieces = enemy_bishops;
     while (enemy_pieces != 0) {
         int square = bitboard_pop_lsb(&enemy_pieces);
-        if ((movegen_bishop_attacks(square, pos->occupancy[BOTH]) &
-             (movegen_king_attacks[king_square] | BITBOARD_FROM_SQUARE(king_square))) != 0) {
-            ++attacker_count;
-            attack_weight += 20;
+        if ((movegen_bishop_attacks(square, pos->occupancy[BOTH]) & king_zone) != 0) {
+            weighted_attack += attack_weights[BISHOP] * 20;
         }
     }
 
     enemy_pieces = enemy_rooks;
     while (enemy_pieces != 0) {
         int square = bitboard_pop_lsb(&enemy_pieces);
-        if ((movegen_rook_attacks(square, pos->occupancy[BOTH]) &
-             (movegen_king_attacks[king_square] | BITBOARD_FROM_SQUARE(king_square))) != 0) {
-            ++attacker_count;
-            attack_weight += 40;
+        if ((movegen_rook_attacks(square, pos->occupancy[BOTH]) & king_zone) != 0) {
+            weighted_attack += attack_weights[ROOK] * 20;
         }
     }
 
     enemy_pieces = enemy_queens;
     while (enemy_pieces != 0) {
         int square = bitboard_pop_lsb(&enemy_pieces);
-        if ((movegen_queen_attacks(square, pos->occupancy[BOTH]) &
-             (movegen_king_attacks[king_square] | BITBOARD_FROM_SQUARE(king_square))) != 0) {
-            ++attacker_count;
-            attack_weight += 80;
+        if ((movegen_queen_attacks(square, pos->occupancy[BOTH]) & king_zone) != 0) {
+            weighted_attack += attack_weights[QUEEN] * 20;
         }
     }
 
-    if (attacker_count >= 2) {
-        int penalty = attacker_count_bonus[attacker_count > 8 ? 8 : attacker_count] + (attack_weight / 2);
+    /* Apply weighted attack penalty */
+    if (weighted_attack > 0) {
+        int weight_index = weighted_attack / 20;
+        if (weight_index > 16) weight_index = 16;
 
-        *mg_score -= sign * penalty;
-        *eg_score -= sign * (penalty / 3);
+        *mg_score -= sign * attack_weight_bonus[weight_index];
+        *eg_score -= sign * (attack_weight_bonus[weight_index] / 3);
     }
 }
 
@@ -676,6 +705,205 @@ void eval_refresh_position_state(Position *pos) {
 
         if (piece_is_valid(piece)) {
             eval_update_piece_square_state(pos, piece, square, 1);
+        }
+    }
+}
+
+static void eval_add_space_threat_terms(const Position *pos, int *mg_score, int *eg_score) {
+    Color side;
+
+    for (side = WHITE; side <= BLACK; ++side) {
+        Color enemy = side == WHITE ? BLACK : WHITE;
+        Bitboard own_pieces;
+        Bitboard enemy_attacks;
+        int sign = side == WHITE ? 1 : -1;
+        int space_bonus = 0;
+        int threat_penalty = 0;
+
+        /* Compute all squares attacked by the enemy */
+        enemy_attacks = 0;
+        {
+            Bitboard pawns = pos->piece_bitboards[piece_bitboard_index(make_piece(enemy, PAWN))];
+            while (pawns != 0) {
+                int sq = bitboard_pop_lsb(&pawns);
+                enemy_attacks |= movegen_pawn_attacks[enemy][sq];
+            }
+        }
+        {
+            Bitboard knights = pos->piece_bitboards[piece_bitboard_index(make_piece(enemy, KNIGHT))];
+            while (knights != 0) {
+                int sq = bitboard_pop_lsb(&knights);
+                enemy_attacks |= movegen_knight_attacks[sq];
+            }
+        }
+        {
+            Bitboard bishops = pos->piece_bitboards[piece_bitboard_index(make_piece(enemy, BISHOP))];
+            while (bishops != 0) {
+                int sq = bitboard_pop_lsb(&bishops);
+                enemy_attacks |= movegen_bishop_attacks(sq, pos->occupancy[BOTH]);
+            }
+        }
+        {
+            Bitboard rooks = pos->piece_bitboards[piece_bitboard_index(make_piece(enemy, ROOK))];
+            while (rooks != 0) {
+                int sq = bitboard_pop_lsb(&rooks);
+                enemy_attacks |= movegen_rook_attacks(sq, pos->occupancy[BOTH]);
+            }
+        }
+        {
+            Bitboard queens = pos->piece_bitboards[piece_bitboard_index(make_piece(enemy, QUEEN))];
+            while (queens != 0) {
+                int sq = bitboard_pop_lsb(&queens);
+                enemy_attacks |= movegen_queen_attacks(sq, pos->occupancy[BOTH]);
+            }
+        }
+        {
+            int king_sq = bitboard_lsb(pos->piece_bitboards[piece_bitboard_index(make_piece(enemy, KING))]);
+            if (king_sq != NO_SQUARE) {
+                enemy_attacks |= movegen_king_attacks[king_sq];
+            }
+        }
+
+        /* Space: count own pieces controlling squares in the opponent's half */
+        {
+            Bitboard own_reach = 0;
+            Bitboard own_pawns = pos->piece_bitboards[piece_bitboard_index(make_piece(side, PAWN))];
+
+            /* Pawn-controlled squares in opponent's half */
+            while (own_pawns != 0) {
+                int sq = bitboard_pop_lsb(&own_pawns);
+                own_reach |= movegen_pawn_attacks[side][sq];
+            }
+            {
+                Bitboard knights = pos->piece_bitboards[piece_bitboard_index(make_piece(side, KNIGHT))];
+                while (knights != 0) {
+                    int sq = bitboard_pop_lsb(&knights);
+                    own_reach |= movegen_knight_attacks[sq];
+                }
+            }
+            {
+                Bitboard bishops = pos->piece_bitboards[piece_bitboard_index(make_piece(side, BISHOP))];
+                while (bishops != 0) {
+                    int sq = bitboard_pop_lsb(&bishops);
+                    own_reach |= movegen_bishop_attacks(sq, pos->occupancy[BOTH]);
+                }
+            }
+
+            /* Count space on opponent's half */
+            if (side == WHITE) {
+                Bitboard opponent_half = 0xFFFFFFFF00000000ULL; /* ranks 4-7 */
+                space_bonus = bitboard_popcount(own_reach & opponent_half & ~enemy_attacks);
+            } else {
+                Bitboard opponent_half = 0x00000000FFFFFFFFULL; /* ranks 0-3 */
+                space_bonus = bitboard_popcount(own_reach & opponent_half & ~enemy_attacks);
+            }
+        }
+
+        /* Threats: pieces attacked by less valuable enemy pieces */
+        own_pieces = pos->occupancy[side] & ~pos->piece_bitboards[piece_bitboard_index(make_piece(side, PAWN))] &
+                     ~pos->piece_bitboards[piece_bitboard_index(make_piece(side, KING))];
+        while (own_pieces != 0) {
+            int sq = bitboard_pop_lsb(&own_pieces);
+            Piece piece = position_get_piece(pos, sq);
+            PieceType pt = piece_type(piece);
+
+            /* Check if attacked by a pawn (cheap attacker) */
+            if ((enemy_attacks & BITBOARD_FROM_SQUARE(sq)) != 0) {
+                Bitboard enemy_pawn_att = movegen_pawn_attacks[side][sq] &
+                    pos->piece_bitboards[piece_bitboard_index(make_piece(enemy, PAWN))];
+                if (enemy_pawn_att != 0 && pt > PAWN) {
+                    threat_penalty += (pt == KNIGHT || pt == BISHOP) ? 30 : (pt == ROOK ? 40 : 60);
+                }
+            }
+        }
+
+        *mg_score += sign * space_bonus * 3;
+        *eg_score += sign * space_bonus;
+        *mg_score -= sign * threat_penalty;
+        *eg_score -= sign * (threat_penalty / 2);
+    }
+}
+
+static void eval_add_endgame_terms(const Position *pos, int *mg_score, int *eg_score) {
+    Color side;
+    Bitboard white_pawns = pos->piece_bitboards[piece_bitboard_index(W_PAWN)];
+    Bitboard black_pawns = pos->piece_bitboards[piece_bitboard_index(B_PAWN)];
+
+    for (side = WHITE; side <= BLACK; ++side) {
+        Bitboard own_pawns = pos->piece_bitboards[piece_bitboard_index(make_piece(side, PAWN))];
+        Bitboard enemy_pawns = pos->piece_bitboards[piece_bitboard_index(make_piece(side == WHITE ? BLACK : WHITE, PAWN))];
+        Bitboard own_rooks = pos->piece_bitboards[piece_bitboard_index(make_piece(side, ROOK))];
+        Bitboard enemy_king_bb = pos->piece_bitboards[piece_bitboard_index(make_piece(side == WHITE ? BLACK : WHITE, KING))];
+        Bitboard own_king_bb = pos->piece_bitboards[piece_bitboard_index(make_piece(side, KING))];
+        int own_king_sq = bitboard_lsb(own_king_bb);
+        int enemy_king_sq = bitboard_lsb(enemy_king_bb);
+        int sign = side == WHITE ? 1 : -1;
+        Bitboard pawns;
+
+        /* Passed pawn vs enemy king proximity in endgame */
+        pawns = own_pawns;
+        while (pawns != 0) {
+            int sq = bitboard_pop_lsb(&pawns);
+            int file = bitboard_file_of(sq);
+            int rank = bitboard_rank_of(sq);
+
+            if (eval_is_passed_pawn(enemy_pawns, side, sq)) {
+                int relative_rank = side == WHITE ? rank : 7 - rank;
+                int promo_dist = 7 - relative_rank;
+
+                /* Bonus if the enemy king is far from the promotion square */
+                int promo_sq = bitboard_make_square(file, side == WHITE ? 7 : 0);
+                int king_dist = eval_abs(bitboard_file_of(enemy_king_sq) - bitboard_file_of(promo_sq)) +
+                                eval_abs(bitboard_rank_of(enemy_king_sq) - bitboard_rank_of(promo_sq));
+                int own_king_dist = eval_abs(bitboard_file_of(own_king_sq) - bitboard_file_of(sq)) +
+                                    eval_abs(bitboard_rank_of(own_king_sq) - bitboard_rank_of(sq));
+
+                /* Closer enemy king = harder to queen, farther = easier */
+                if (king_dist > promo_dist + 1) {
+                    *eg_score += sign * (20 + (relative_rank >= 5 ? 30 : 0));
+                }
+
+                /* Own king close to passed pawn helps support it */
+                if (own_king_dist <= 2) {
+                    *eg_score += sign * (15 + (relative_rank >= 5 ? 20 : 0));
+                }
+            }
+        }
+
+        /* Rook behind passed pawns */
+        pawns = own_pawns;
+        while (pawns != 0) {
+            int sq = bitboard_pop_lsb(&pawns);
+            int file = bitboard_file_of(sq);
+            int rank = bitboard_rank_of(sq);
+
+            if (eval_is_passed_pawn(enemy_pawns, side, sq)) {
+                /* Check if own rook is behind this pawn (on the same file, behind = lower relative rank) */
+                Bitboard file_mask = file_masks[file];
+                Bitboard rooks_on_file = own_rooks & file_mask;
+
+                while (rooks_on_file != 0) {
+                    int rook_sq = bitboard_pop_lsb(&rooks_on_file);
+                    int rook_rel_rank = side == WHITE ? bitboard_rank_of(rook_sq) : 7 - bitboard_rank_of(rook_sq);
+                    int pawn_rel_rank = side == WHITE ? rank : 7 - rank;
+
+                    if (rook_rel_rank < pawn_rel_rank) {
+                        *eg_score += sign * 20;
+                        break;
+                    }
+                }
+            }
+        }
+
+        /* King centralization in endgame */
+        {
+            int king_file = bitboard_file_of(own_king_sq);
+            int king_rank = bitboard_rank_of(own_king_sq);
+            int center_dist = eval_abs(king_file - 3) + eval_abs(king_rank - 3);
+            if (center_dist > 4) center_dist = eval_abs(king_file - 4) + eval_abs(king_rank - 4);
+            if (center_dist > 4) center_dist = 4;
+
+            *eg_score += sign * (4 - center_dist) * 8;
         }
     }
 }
@@ -741,6 +969,16 @@ int eval_evaluate(Position *pos) {
 
     eval_add_king_safety_side(pos, WHITE, &mg_score, &eg_score);
     eval_add_king_safety_side(pos, BLACK, &mg_score, &eg_score);
+
+    eval_add_space_threat_terms(pos, &mg_score, &eg_score);
+
+    /* Endgame-specific evaluation */
+    {
+        int eg_phase = 256 - eval_calculate_phase(pos);
+        if (eg_phase > 128) {
+            eval_add_endgame_terms(pos, &mg_score, &eg_score);
+        }
+    }
 
     phase = eval_calculate_phase(pos);
     score = ((mg_score * phase) + (eg_score * (256 - phase))) / 256;

@@ -1,11 +1,13 @@
 #include "search.h"
 
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "draw.h"
 #include "evaluate.h"
 #include "movorder.h"
+#include "see.h"
 #include "time.h"
 #include "tt.h"
 
@@ -16,6 +18,8 @@ typedef struct SearchContext {
     bool stop;
     Move killers[SEARCH_MAX_PLY][2];
     int history[2][BOARD_SQUARES][BOARD_SQUARES];
+    Move countermoves[BOARD_SQUARES][BOARD_SQUARES];
+    Move last_move;
 } SearchContext;
 
 static const SearchOptions search_default_options = {
@@ -24,9 +28,17 @@ static const SearchOptions search_default_options = {
     true,
     true,
     true,
+    true,
+    true,
+    true,
+    true,
     true
 };
 static SearchOptions search_options = {
+    true,
+    true,
+    true,
+    true,
     true,
     true,
     true,
@@ -127,6 +139,18 @@ static void search_store_killer(SearchContext *ctx, int ply, Move move) {
 
     ctx->killers[ply][1] = ctx->killers[ply][0];
     ctx->killers[ply][0] = move;
+}
+
+static void search_store_countermove(SearchContext *ctx, Move move) {
+    if (ctx == NULL || movorder_is_capture(move)) {
+        return;
+    }
+
+    if (ctx->last_move != 0) {
+        int from = move_source(ctx->last_move);
+        int to = move_target(ctx->last_move);
+        ctx->countermoves[from][to] = move;
+    }
 }
 
 static void search_store_history(SearchContext *ctx, Color side, Move move, int depth) {
@@ -403,7 +427,7 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
         }
     }
 
-    movorder_score_moves(pos, &candidate_moves, tt_move, 0, 0, ctx->history, &ordered_moves);
+    movorder_score_moves(pos, &candidate_moves, tt_move, 0, 0, 0, ctx->history, &ordered_moves);
 
     for (index = 0; index < ordered_moves.count; ++index) {
         Move move;
@@ -415,7 +439,7 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
 
         if (!in_check &&
             movorder_is_capture(move) &&
-            static_eval + movorder_estimate_gain(move) + SEARCH_DELTA_MARGIN < alpha) {
+            see_evaluate(pos, move) < 0) {
             continue;
         }
 
@@ -532,6 +556,20 @@ static int search_negamax(
         }
     }
 
+    /* Reverse Futility Pruning (Static Null Move Pruning):
+       If static eval - margin >= beta at shallow depth and not in check,
+       the position is so good that we can safely return beta. */
+    if (search_options.enable_reverse_futility &&
+        !pv_node &&
+        depth <= 3 &&
+        !in_check &&
+        static_eval - (80 * depth) >= beta &&
+        beta < SEARCH_MATE_BOUND &&
+        alpha > -SEARCH_MATE_BOUND &&
+        search_has_non_pawn_material(pos, (Color) pos->side_to_move)) {
+        return static_eval - (80 * depth);
+    }
+
     if (search_options.enable_null_move_pruning &&
         !pv_node &&
         allow_null_move &&
@@ -561,20 +599,126 @@ static int search_negamax(
         }
     }
 
+    /* Internal Iterative Deepening: at PV nodes with no TT move, do a reduced-depth
+       search first to discover a good move for ordering. */
+    if (search_options.enable_iid &&
+        pv_node &&
+        tt_move == 0 &&
+        depth >= 4) {
+        SearchContext iid_ctx;
+        int iid_depth = depth - 2;
+        if (iid_depth < 1) iid_depth = 1;
+
+        iid_ctx = *ctx;
+        iid_ctx.stop = false;
+
+        search_negamax(pos, &iid_ctx, iid_depth, alpha, beta, ply, true);
+        if (!iid_ctx.stop) {
+            TTEntry iid_entry;
+            if (tt_probe(pos->zobrist_hash, &iid_entry) && iid_entry.best_move != 0) {
+                tt_move = iid_entry.best_move;
+            }
+        }
+    }
+
     movegen_generate_legal(pos, &legal_moves);
     if (legal_moves.count == 0) {
         return in_check ? (-SEARCH_MATE_SCORE + ply) : 0;
     }
 
-    movorder_score_moves(
-        pos,
-        &legal_moves,
-        tt_move,
-        ctx->killers[ply][0],
-        ctx->killers[ply][1],
-        ctx->history,
-        &ordered_moves
-    );
+    {
+        Move countermove = 0;
+        if (ctx->last_move != 0) {
+            int from = move_source(ctx->last_move);
+            int to = move_target(ctx->last_move);
+            countermove = ctx->countermoves[from][to];
+        }
+        movorder_score_moves(
+            pos,
+            &legal_moves,
+            tt_move,
+            ctx->killers[ply][0],
+            ctx->killers[ply][1],
+            countermove,
+            ctx->history,
+            &ordered_moves
+        );
+    }
+
+    /* Singular Extensions: check if the TT move is significantly better than alternatives */
+    bool singular_move = false;
+    if (search_options.enable_singular_extensions &&
+        tt_move != 0 &&
+        !pv_node &&
+        depth >= 8 &&
+        entry.depth >= depth - 3 &&
+        entry.flag != TT_FLAG_ALPHA &&
+        abs(entry.score) < SEARCH_MATE_BOUND) {
+        int singular_beta = tt_score_from_entry(&entry, ply) - (2 * depth);
+        int singular_depth = (depth - 1) / 2;
+        if (singular_depth < 1) singular_depth = 1;
+
+        /* Search with the TT move excluded — if no other move beats singular_beta,
+           the TT move is singular */
+        SearchContext singular_ctx;
+        Move saved_last_move = ctx->last_move;
+
+        singular_ctx = *ctx;
+        singular_ctx.stop = false;
+        ctx->last_move = 0;
+
+        /* Generate legal moves excluding the TT move */
+        {
+            MoveList excl_moves;
+            size_t excl_index;
+            excl_moves.count = 0;
+            movegen_generate_legal(pos, &excl_moves);
+            for (excl_index = 0; excl_index < excl_moves.count; ++excl_index) {
+                if (excl_moves.moves[excl_index] == tt_move) {
+                    excl_moves.moves[excl_index] = excl_moves.moves[--excl_moves.count];
+                    break;
+                }
+            }
+
+            if (excl_moves.count > 0) {
+                OrderedMoveList excl_ordered;
+                movorder_score_moves(pos, &excl_moves, 0, ctx->killers[ply][0], ctx->killers[ply][1], 0, ctx->history, &excl_ordered);
+
+                /* Search each excluded move to see if any beat singular_beta */
+                bool move_is_singular = true;
+                size_t excl_ord_index;
+                for (excl_ord_index = 0; excl_ord_index < excl_ordered.count && move_is_singular; ++excl_ord_index) {
+                    Move excl_move;
+                    if (!movorder_pick_next(&excl_ordered, excl_ord_index, &excl_move)) {
+                        continue;
+                    }
+                    if (!movegen_make_move(pos, excl_move)) {
+                        continue;
+                    }
+                    {
+                        int excl_score = -search_negamax(pos, &singular_ctx, singular_depth, -singular_beta - 1, -singular_beta, ply + 1, true);
+                        movegen_unmake_move(pos);
+                        if (singular_ctx.stop) {
+                            move_is_singular = false;
+                            break;
+                        }
+                        if (excl_score >= singular_beta) {
+                            move_is_singular = false;
+                        }
+                    }
+                }
+
+                if (move_is_singular) {
+                    singular_move = true;
+                }
+            }
+        }
+
+        ctx->last_move = saved_last_move;
+        if (singular_ctx.stop) {
+            return 0;
+        }
+    }
 
     for (index = 0; index < ordered_moves.count; ++index) {
         Move move;
@@ -584,6 +728,7 @@ static int search_negamax(
         int move_number = (int) index + 1;
         bool quiet_move;
         bool gives_check;
+        bool extend = false;
         Color side_to_move = (Color) pos->side_to_move;
 
         if (!movorder_pick_next(&ordered_moves, index, &move)) {
@@ -618,6 +763,7 @@ static int search_negamax(
 
             if (score >= beta) {
                 search_store_killer(ctx, ply, move);
+                search_store_countermove(ctx, move);
                 search_store_history(ctx, side_to_move, move, depth);
                 tt_store(pos->zobrist_hash, depth, score, static_eval, move, TT_FLAG_BETA, ply);
                 return score;
@@ -637,7 +783,24 @@ static int search_negamax(
             continue;
         }
 
-        child_depth = depth - 1 + (search_options.enable_check_extensions && gives_check ? 1 : 0);
+        /* Late Move Pruning: at shallow depths, skip quiet moves late in the move list */
+        if (search_options.enable_lmp &&
+            !pv_node &&
+            depth <= 3 &&
+            !in_check &&
+            quiet_move &&
+            !gives_check &&
+            move_number > (3 + depth * depth)) {
+            movegen_unmake_move(pos);
+            continue;
+        }
+
+        /* Singular extension: extend the TT move if it's singular */
+        if (singular_move && move == tt_move) {
+            extend = true;
+        }
+
+        child_depth = depth - 1 + (search_options.enable_check_extensions && gives_check ? 1 : 0) + (extend ? 1 : 0);
         if (child_depth < 0) {
             child_depth = 0;
         }
@@ -662,7 +825,10 @@ static int search_negamax(
         }
 
         if (first_move) {
+            Move prev_move = ctx->last_move;
+            ctx->last_move = move;
             score = -search_negamax(pos, ctx, child_depth, -beta, -alpha, ply + 1, true);
+            ctx->last_move = prev_move;
             first_move = false;
         } else {
             int reduced_depth = child_depth - reduction;
@@ -671,9 +837,14 @@ static int search_negamax(
                 reduced_depth = 0;
             }
 
-            score = -search_negamax(pos, ctx, reduced_depth, -alpha - 1, -alpha, ply + 1, true);
-            if (!ctx->stop && ((reduction > 0 && score > alpha - 64) || (reduction == 0 && score > alpha))) {
-                score = -search_negamax(pos, ctx, child_depth, -beta, -alpha, ply + 1, true);
+            {
+                Move prev_move = ctx->last_move;
+                ctx->last_move = move;
+                score = -search_negamax(pos, ctx, reduced_depth, -alpha - 1, -alpha, ply + 1, true);
+                if (!ctx->stop && ((reduction > 0 && score > alpha - 64) || (reduction == 0 && score > alpha))) {
+                    score = -search_negamax(pos, ctx, child_depth, -beta, -alpha, ply + 1, true);
+                }
+                ctx->last_move = prev_move;
             }
         }
 
@@ -693,6 +864,7 @@ static int search_negamax(
 
         if (score >= beta) {
             search_store_killer(ctx, ply, move);
+            search_store_countermove(ctx, move);
             search_store_history(ctx, side_to_move, move, depth);
             tt_store(pos->zobrist_hash, depth, score, static_eval, move, TT_FLAG_BETA, ply);
             return score;

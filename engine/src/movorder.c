@@ -1,5 +1,7 @@
 #include "movorder.h"
 
+#include "see.h"
+
 static const int move_order_piece_values[PIECE_TYPE_NB] = {
     100,
     320,
@@ -36,6 +38,7 @@ static int movorder_score_move(
     Move tt_move,
     Move killer_one,
     Move killer_two,
+    Move countermove,
     const int history[2][BOARD_SQUARES][BOARD_SQUARES]
 ) {
     Piece moving_piece;
@@ -51,11 +54,13 @@ static int movorder_score_move(
     moving_piece = position_get_piece(pos, source);
 
     if (movorder_is_capture(move)) {
-        int victim_value = movorder_piece_value(move_captured_piece(move));
-        int attacker_value = movorder_piece_value(moving_piece);
-        int promotion_bonus = movorder_estimate_gain(move) - victim_value;
+        int see_score = see_evaluate(pos, move);
 
-        return 1000000 + (victim_value * 16) - attacker_value + promotion_bonus;
+        if (see_score >= 0) {
+            return 1000000 + 50000 + see_score;
+        }
+
+        return -100000 + see_score;
     }
 
     if (move == killer_one) {
@@ -64,6 +69,10 @@ static int movorder_score_move(
 
     if (move == killer_two) {
         return 800000;
+    }
+
+    if (move == countermove) {
+        return 700000;
     }
 
     if (history != NULL) {
@@ -79,6 +88,7 @@ void movorder_score_moves(
     Move tt_move,
     Move killer_one,
     Move killer_two,
+    Move countermove,
     const int history[2][BOARD_SQUARES][BOARD_SQUARES],
     OrderedMoveList *ordered
 ) {
@@ -97,7 +107,7 @@ void movorder_score_moves(
     ordered->count = moves->count;
     for (index = 0; index < moves->count; ++index) {
         ordered->entries[index].move = moves->moves[index];
-        ordered->entries[index].score = movorder_score_move(pos, moves->moves[index], tt_move, killer_one, killer_two, history);
+        ordered->entries[index].score = movorder_score_move(pos, moves->moves[index], tt_move, killer_one, killer_two, countermove, history);
     }
 }
 

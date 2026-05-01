@@ -7,6 +7,7 @@ int test_legality_run(void);
 int test_evaluate_run(void);
 int test_perft_run(void);
 int test_search_run(void);
+int test_see_run(void);
 int test_engine_api_run(void);
 
 #endif

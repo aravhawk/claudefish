@@ -45,6 +45,10 @@ typedef struct SearchOptions {
     bool enable_razoring;
     bool enable_aspiration_windows;
     bool enable_check_extensions;
+    bool enable_lmp;
+    bool enable_reverse_futility;
+    bool enable_iid;
+    bool enable_singular_extensions;
 } SearchOptions;
 
 void search_init(void);

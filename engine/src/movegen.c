@@ -418,16 +418,17 @@ static void init_slider_tables(void) {
     }
 }
 
-bool movegen_is_square_attacked(const Position *pos, int square, Color attacker) {
+Bitboard movegen_attackers_to(const Position *pos, int square, Color attacker) {
+    Bitboard attackers = 0;
+    Bitboard attacker_pawns;
     Bitboard attacker_knights;
     Bitboard attacker_bishops;
     Bitboard attacker_rooks;
     Bitboard attacker_queens;
     Bitboard attacker_king;
-    Bitboard attacker_pawns;
 
     if (pos == NULL || !square_is_valid(square) || (attacker != WHITE && attacker != BLACK)) {
-        return false;
+        return 0;
     }
 
     movegen_init();
@@ -440,26 +441,21 @@ bool movegen_is_square_attacked(const Position *pos, int square, Color attacker)
     attacker_king = pos->piece_bitboards[piece_bitboard_index(make_piece(attacker, KING))];
 
     if (attacker == WHITE) {
-        if ((movegen_pawn_attacks[BLACK][square] & attacker_pawns) != 0) {
-            return true;
-        }
+        attackers |= movegen_pawn_attacks[BLACK][square] & attacker_pawns;
     } else {
-        if ((movegen_pawn_attacks[WHITE][square] & attacker_pawns) != 0) {
-            return true;
-        }
+        attackers |= movegen_pawn_attacks[WHITE][square] & attacker_pawns;
     }
 
-    if ((movegen_knight_attacks[square] & attacker_knights) != 0) {
-        return true;
-    }
-    if ((movegen_bishop_attacks(square, pos->occupancy[BOTH]) & (attacker_bishops | attacker_queens)) != 0) {
-        return true;
-    }
-    if ((movegen_rook_attacks(square, pos->occupancy[BOTH]) & (attacker_rooks | attacker_queens)) != 0) {
-        return true;
-    }
+    attackers |= movegen_knight_attacks[square] & attacker_knights;
+    attackers |= movegen_bishop_attacks(square, pos->occupancy[BOTH]) & (attacker_bishops | attacker_queens);
+    attackers |= movegen_rook_attacks(square, pos->occupancy[BOTH]) & (attacker_rooks | attacker_queens);
+    attackers |= movegen_king_attacks[square] & attacker_king;
 
-    return (movegen_king_attacks[square] & attacker_king) != 0;
+    return attackers;
+}
+
+bool movegen_is_square_attacked(const Position *pos, int square, Color attacker) {
+    return movegen_attackers_to(pos, square, attacker) != 0;
 }
 
 bool movegen_is_in_check(const Position *pos, Color side) {

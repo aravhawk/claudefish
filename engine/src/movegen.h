@@ -68,6 +68,7 @@ Bitboard movegen_bishop_attacks(int square, Bitboard occupancy);
 Bitboard movegen_rook_attacks(int square, Bitboard occupancy);
 Bitboard movegen_queen_attacks(int square, Bitboard occupancy);
 Bitboard movegen_pinned_pieces(const Position *pos, Color side);
+Bitboard movegen_attackers_to(const Position *pos, int square, Color attacker);
 bool movegen_is_square_attacked(const Position *pos, int square, Color attacker);
 bool movegen_is_in_check(const Position *pos, Color side);
 bool movegen_make_move(Position *pos, Move move);
