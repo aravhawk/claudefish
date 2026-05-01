@@ -42,7 +42,8 @@ static int movorder_score_move(
     const int history[2][BOARD_SQUARES][BOARD_SQUARES],
     const int *continuation_history,
     PieceType prev_piece,
-    int prev_target
+    int prev_target,
+    int policy_score
 ) {
     Piece moving_piece;
     PieceType moving_pt;
@@ -93,6 +94,12 @@ static int movorder_score_move(
                       moving_pt * BOARD_SQUARES + target;
             score += continuation_history[idx] / 2;
         }
+        /* Policy network bonus: add policy prior to move ordering score.
+           This is the novel technique - using a policy network to guide
+           alpha-beta move ordering, which no CCRL engine does. */
+        if (policy_score > 0) {
+            score += policy_score / 4; /* scale policy to match history range */
+        }
         return score;
     }
 }
@@ -108,6 +115,7 @@ void movorder_score_moves(
     const int *continuation_history,
     PieceType prev_piece,
     int prev_target,
+    int policy_scores[MOVEGEN_MAX_MOVES],
     OrderedMoveList *ordered
 ) {
     size_t index;
@@ -124,10 +132,11 @@ void movorder_score_moves(
 
     ordered->count = moves->count;
     for (index = 0; index < moves->count; ++index) {
+        int ps = (policy_scores != NULL) ? policy_scores[index] : 0;
         ordered->entries[index].move = moves->moves[index];
         ordered->entries[index].score = movorder_score_move(
             pos, moves->moves[index], tt_move, killer_one, killer_two, countermove,
-            history, continuation_history, prev_piece, prev_target
+            history, continuation_history, prev_piece, prev_target, ps
         );
     }
 }

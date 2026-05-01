@@ -9,5 +9,6 @@ int test_perft_run(void);
 int test_search_run(void);
 int test_see_run(void);
 int test_engine_api_run(void);
+int test_nnue_run(void);
 
 #endif

@@ -10,7 +10,10 @@
 
 #include "draw.h"
 #include "evaluate.h"
+#include "mcts.h"
 #include "movorder.h"
+#include "nnue.h"
+#include "policy.h"
 #include "see.h"
 #include "time.h"
 #include "tt.h"
@@ -27,6 +30,18 @@ typedef struct SearchContext {
     Move last_move;
     PieceType last_piece_type;
     int last_target;
+
+    /* NNUE state: heap-allocated to avoid stack overflow from large accumulator stack */
+    NNUEState *nnue_state;
+    bool use_nnue; /* whether NNUE eval is being used */
+
+    /* Adaptive search parameters from policy classification */
+    AdaptParams adapt_params;
+    bool adapt_initialized;
+
+    /* Ensemble disagreement tracking */
+    int prev_nnue_eval;  /* cached NNUE eval for ensemble comparison */
+    int prev_classical_eval; /* cached classical eval */
 } SearchContext;
 
 enum {
@@ -35,17 +50,81 @@ enum {
 
 #define CH_INDEX(pp, pt, cp, ct) ((pp) * BOARD_SQUARES * PIECE_TYPE_NB * BOARD_SQUARES + (pt) * PIECE_TYPE_NB * BOARD_SQUARES + (cp) * BOARD_SQUARES + (ct))
 
+/* ---- Combined Evaluation: NNUE + Classical Ensemble ----
+   When both evaluators are available, use NNUE as primary but check for
+   disagreement. When NNUE and classical disagree significantly, this signals
+   an unusual position where NNUE may have blind spots. */
+
+enum {
+    ENSEMBLE_DISAGREEMENT_THRESHOLD = 100, /* centipawns */
+    ENSEMBLE_EXTENSION_DEPTH = 2
+};
+
+static int search_evaluate_combined(
+    SearchContext *ctx,
+    Position *pos,
+    bool *disagreement
+) {
+    int classical_eval, nnue_eval, final_eval;
+
+    if (disagreement != NULL) *disagreement = false;
+
+    if (!ctx->use_nnue || !nnue_is_loaded()) {
+        return eval_evaluate(pos);
+    }
+
+    /* Get NNUE evaluation */
+    nnue_eval = nnue_evaluate(ctx->nnue_state, pos);
+
+    /* Get classical evaluation for ensemble comparison */
+    classical_eval = eval_evaluate(pos);
+
+    /* Cache for ensemble tracking */
+    ctx->prev_nnue_eval = nnue_eval;
+    ctx->prev_classical_eval = classical_eval;
+
+    /* Use NNUE as primary evaluation */
+    final_eval = nnue_eval;
+
+    /* Ensemble disagreement detection */
+    {
+        int diff = abs(nnue_eval - classical_eval);
+        if (diff > ENSEMBLE_DISAGREEMENT_THRESHOLD) {
+            if (disagreement != NULL) *disagreement = true;
+            /* Blend evaluations when they disagree: average NNUE and classical
+               with more weight toward classical for positions NNUE might miscalibrate */
+            final_eval = (nnue_eval * 3 + classical_eval) / 4;
+        }
+    }
+
+    return final_eval;
+}
+
 static void search_ctx_init(SearchContext *ctx) {
     memset(ctx, 0, sizeof(*ctx));
     ctx->continuation_history = (int *) calloc(CH_SIZE, sizeof(int));
     ctx->last_piece_type = (PieceType) -1;
     ctx->last_target = -1;
+    ctx->use_nnue = false;
+    ctx->nnue_state = NULL;
+    ctx->adapt_initialized = false;
+
+    /* Default adaptive params (no adjustment) */
+    ctx->adapt_params.lmr_multiplier = 100;
+    ctx->adapt_params.null_move_r_delta = 0;
+    ctx->adapt_params.futility_margin = 100;
+    ctx->adapt_params.lmp_threshold = 100;
+    ctx->adapt_params.extension_threshold = 15;
 }
 
 static void search_ctx_cleanup(SearchContext *ctx) {
     if (ctx->continuation_history != NULL) {
         free(ctx->continuation_history);
         ctx->continuation_history = NULL;
+    }
+    if (ctx->nnue_state != NULL) {
+        nnue_destroy_state(ctx->nnue_state);
+        ctx->nnue_state = NULL;
     }
 }
 
@@ -384,11 +463,18 @@ void search_init(void) {
     movegen_init();
     eval_init();
     tt_init();
+    nnue_init();
+    policy_init();
+    mcts_init();
 
     if (!search_initialized) {
         search_init_lmr_table();
         search_initialized = true;
     }
+
+    /* Load NNUE and policy networks if available */
+    nnue_load_embedded();
+    policy_load_embedded();
 }
 
 void search_reset_heuristics(void) {
@@ -455,7 +541,7 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
             }
         }
     } else {
-        static_eval = eval_evaluate(pos);
+        static_eval = search_evaluate_combined(ctx, pos, NULL);
     }
 
     if (!in_check) {
@@ -492,7 +578,7 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
         }
     }
 
-    movorder_score_moves(pos, &candidate_moves, tt_move, 0, 0, 0, ctx->history, ctx->continuation_history, (PieceType) -1, -1, &ordered_moves);
+    movorder_score_moves(pos, &candidate_moves, tt_move, 0, 0, 0, ctx->history, ctx->continuation_history, (PieceType) -1, -1, NULL, &ordered_moves);
 
     for (index = 0; index < ordered_moves.count; ++index) {
         Move move;
@@ -512,7 +598,18 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
             continue;
         }
 
+        if (ctx->use_nnue) {
+            Piece moved_piece = position_get_piece(pos, move_target(move));
+            nnue_push(ctx->nnue_state);
+            nnue_update_accumulator_incremental(ctx->nnue_state, pos,
+                moved_piece, move_source(move), move_target(move));
+        }
+
         score = -search_quiescence(pos, ctx, -beta, -alpha, ply + 1);
+
+        if (ctx->use_nnue) {
+            nnue_pop(ctx->nnue_state);
+        }
         movegen_unmake_move(pos);
 
         if (ctx->stop) {
@@ -603,7 +700,14 @@ static int search_negamax(
             }
         }
     } else {
-        static_eval = eval_evaluate(pos);
+        bool disagreement = false;
+        static_eval = search_evaluate_combined(ctx, pos, &disagreement);
+
+        /* Ensemble disagreement: extend search depth when NNUE and classical
+           disagree significantly, catching positions where NNUE has blind spots */
+        if (disagreement && depth >= 3 && !pv_node) {
+            depth += 1;
+        }
     }
 
     /* Improving: is our static eval better than 2 plies ago? */
@@ -661,8 +765,12 @@ static int search_negamax(
         int null_depth = depth - reduction - 1;
 
         if (null_depth > 0 && movegen_make_null_move(pos)) {
+            /* NNUE: null move doesn't change pieces, but we push/pop to maintain stack */
+            if (ctx->use_nnue) nnue_push(ctx->nnue_state);
+
             int null_score = -search_negamax(pos, ctx, null_depth, -beta, -beta + 1, ply + 1, false, -static_eval);
 
+            if (ctx->use_nnue) nnue_pop(ctx->nnue_state);
             movegen_unmake_null_move(pos);
             if (ctx->stop) {
                 return 0;
@@ -745,6 +853,7 @@ static int search_negamax(
             ctx->continuation_history,
             ctx->last_piece_type,
             ctx->last_target,
+            NULL, /* policy scores computed separately in move loop */
             &ordered_moves
         );
     }
@@ -786,7 +895,7 @@ static int search_negamax(
 
             if (excl_moves.count > 0) {
                 OrderedMoveList excl_ordered;
-                movorder_score_moves(pos, &excl_moves, 0, ctx->killers[ply][0], ctx->killers[ply][1], 0, ctx->history, ctx->continuation_history, (PieceType) -1, -1, &excl_ordered);
+                movorder_score_moves(pos, &excl_moves, 0, ctx->killers[ply][0], ctx->killers[ply][1], 0, ctx->history, ctx->continuation_history, (PieceType) -1, -1, NULL, &excl_ordered);
 
                 /* Search each excluded move to see if any beat singular_beta */
                 bool move_is_singular = true;
@@ -844,6 +953,14 @@ static int search_negamax(
             continue;
         }
 
+        /* Update NNUE accumulator stack for this move */
+        if (ctx->use_nnue) {
+            nnue_push(ctx->nnue_state);
+            nnue_update_accumulator_incremental(ctx->nnue_state, pos,
+                position_get_piece(pos, move_target(move)),
+                move_source(move), move_target(move));
+        }
+
         gives_check = movegen_is_in_check(pos, (Color) pos->side_to_move);
 
         if (movegen_is_stalemate(pos)) {
@@ -854,6 +971,7 @@ static int search_negamax(
                 score = SEARCH_STALEMATE_BIAS;
             }
 
+            if (ctx->use_nnue) nnue_pop(ctx->nnue_state);
             movegen_unmake_move(pos);
 
             if (score > best_score) {
@@ -888,6 +1006,7 @@ static int search_negamax(
             quiet_move &&
             !gives_check &&
             static_eval + (150 * depth) <= alpha) {
+            if (ctx->use_nnue) nnue_pop(ctx->nnue_state);
             movegen_unmake_move(pos);
             continue;
         }
@@ -901,6 +1020,7 @@ static int search_negamax(
             quiet_move &&
             !gives_check &&
             move_number > (3 + depth * depth + (improving ? 3 : 0))) {
+            if (ctx->use_nnue) nnue_pop(ctx->nnue_state);
             movegen_unmake_move(pos);
             continue;
         }
@@ -929,6 +1049,10 @@ static int search_negamax(
             int move_index = move_number > MOVEGEN_MAX_MOVES ? MOVEGEN_MAX_MOVES : move_number;
 
             reduction = search_lmr_table[depth_index][move_index];
+            /* Apply adaptive LMR multiplier from position classification */
+            if (ctx->adapt_initialized) {
+                reduction = (reduction * ctx->adapt_params.lmr_multiplier) / 100;
+            }
             if (reduction > child_depth - 1) {
                 reduction = child_depth - 1;
             }
@@ -970,6 +1094,7 @@ static int search_negamax(
             }
         }
 
+        if (ctx->use_nnue) nnue_pop(ctx->nnue_state);
         movegen_unmake_move(pos);
         if (ctx->stop) {
             return 0;
@@ -1065,6 +1190,31 @@ static void *search_thread_worker(void *arg) {
 
     search_ctx_init(&data->ctx);
     memset(result, 0, sizeof(*result));
+
+    /* Initialize NNUE state for this search (heap-allocated to avoid stack overflow) */
+    if (nnue_is_loaded()) {
+        data->ctx.nnue_state = nnue_create_state();
+        if (data->ctx.nnue_state != NULL) {
+            nnue_state_init(data->ctx.nnue_state, &data->pos);
+            data->ctx.use_nnue = true;
+        } else {
+            data->ctx.use_nnue = false;
+        }
+    } else {
+        data->ctx.use_nnue = false;
+    }
+
+    /* Initialize adaptive search parameters via policy classification */
+    if (policy_is_loaded() && data->ctx.use_nnue && data->ctx.nnue_state != NULL) {
+        int pos_class = policy_classify_position(
+            &data->ctx.nnue_state->acc_stack[data->ctx.nnue_state->current],
+            &data->pos
+        );
+        if (pos_class >= 0) {
+            data->ctx.adapt_params = policy_get_adapt_params(pos_class);
+            data->ctx.adapt_initialized = true;
+        }
+    }
 
     time_start(&data->ctx.timer, data->time_limit_ms);
 

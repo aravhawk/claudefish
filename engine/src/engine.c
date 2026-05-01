@@ -5,6 +5,8 @@
 #include "book.h"
 #include "draw.h"
 #include "evaluate.h"
+#include "nnue.h"
+#include "policy.h"
 #include "search.h"
 #include "time.h"
 
@@ -109,6 +111,8 @@ static bool engine_position_is_successor(const Position *current, const Position
 int init_engine(void) {
     movegen_init();
     eval_init();
+    nnue_init();
+    policy_init();
     search_init();
     book_init();
 

@@ -24,11 +24,12 @@ emcc "$ENGINE_DIR"/*.c \
   -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","FS"]' \
   -s ENVIRONMENT=web,worker \
   -s ALLOW_MEMORY_GROWTH=1 \
-  -s INITIAL_MEMORY=16777216 \
-  -s MAXIMUM_MEMORY=268435456 \
-  -s STACK_SIZE=1048576 \
+  -s INITIAL_MEMORY=33554432 \
+  -s MAXIMUM_MEMORY=536870912 \
+  -s STACK_SIZE=2097152 \
   -s NO_EXIT_RUNTIME=1 \
   -s FORCE_FILESYSTEM=1 \
+  -s SIMD=1 \
   --embed-file "$PROJECT_DIR/engine/book/rodent.bin@/book.bin" \
   --no-entry \
   -o "$OUTPUT_DIR/engine.js"

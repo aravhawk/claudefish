@@ -3,12 +3,20 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 
 #include "../src/bitboard.h"
 #include "../src/movegen.h"
 #include "../src/position.h"
 #include "test_suites.h"
+
+/* Use gettimeofday for portable timing (clock_t may be hidden by system headers) */
+#include <sys/time.h>
+
+static double portable_clock(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (double)tv.tv_sec + (double)tv.tv_usec / 1000000.0;
+}
 
 static int tests_run = 0;
 static int tests_failed = 0;
@@ -273,7 +281,7 @@ static void run_standard_perft_case(
     for (depth = 1; depth <= max_depth; ++depth) {
         Position iteration_pos;
         uint64_t actual_nodes;
-        clock_t started_at = 0;
+        double started_at = 0.0;
         double elapsed_seconds = 0.0;
 
         if (!parse_position(test_name, fen, &iteration_pos)) {
@@ -281,13 +289,13 @@ static void run_standard_perft_case(
         }
 
         if (enforce_performance_limit && depth == max_depth) {
-            started_at = clock();
+            started_at = portable_clock();
         }
 
         actual_nodes = perft(&iteration_pos, depth);
 
         if (enforce_performance_limit && depth == max_depth) {
-            elapsed_seconds = (double) (clock() - started_at) / (double) CLOCKS_PER_SEC;
+            elapsed_seconds = portable_clock() - started_at;
             if (elapsed_seconds > 30.0) {
                 failf(
                     test_name,

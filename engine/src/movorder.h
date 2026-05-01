@@ -26,6 +26,7 @@ void movorder_score_moves(
     const int *continuation_history,
     PieceType prev_piece,
     int prev_target,
+    int policy_scores[MOVEGEN_MAX_MOVES],
     OrderedMoveList *ordered
 );
 bool movorder_pick_next(OrderedMoveList *ordered, size_t index, Move *out_move);

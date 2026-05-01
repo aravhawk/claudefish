@@ -13,6 +13,7 @@ int main(void) {
     failed += test_search_run();
     failed += test_see_run();
     failed += test_engine_api_run();
+    failed += test_nnue_run();
 
     if (failed == 0) {
         printf("PASS: all engine tests passed\n");
