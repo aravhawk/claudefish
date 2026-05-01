@@ -5,7 +5,7 @@
 #include "draw.h"
 
 enum {
-    EVAL_PAWN_HASH_SIZE = 16384,
+    EVAL_PAWN_HASH_SIZE = 262144,
     EVAL_OPENING_PHASE_TOTAL = 24
 };
 
@@ -458,7 +458,15 @@ static void eval_add_piece_activity_side(const Position *pos, Color side, int *m
     pieces = pos->piece_bitboards[piece_bitboard_index(make_piece(side, KNIGHT))];
     while (pieces != 0) {
         int square = bitboard_pop_lsb(&pieces);
-        int mobility = bitboard_popcount(movegen_knight_attacks[square] & ~own_occupancy);
+        /* Mobility excluding squares attacked by enemy pawns */
+        Bitboard enemy_pawn_attacks = 0;
+        int sq2;
+        Bitboard ep = enemy_pawns;
+        while (ep != 0) {
+            sq2 = bitboard_pop_lsb(&ep);
+            enemy_pawn_attacks |= movegen_pawn_attacks[side == WHITE ? BLACK : WHITE][sq2];
+        }
+        int mobility = bitboard_popcount(movegen_knight_attacks[square] & ~own_occupancy & ~enemy_pawn_attacks);
 
         *mg_score += sign * eval_lookup_bonus(knight_mobility_mg, mobility, 8);
         *eg_score += sign * eval_lookup_bonus(knight_mobility_eg, mobility, 8);
@@ -472,7 +480,15 @@ static void eval_add_piece_activity_side(const Position *pos, Color side, int *m
     pieces = pos->piece_bitboards[piece_bitboard_index(make_piece(side, BISHOP))];
     while (pieces != 0) {
         int square = bitboard_pop_lsb(&pieces);
-        int mobility = bitboard_popcount(movegen_bishop_attacks(square, all_occupancy) & ~own_occupancy);
+        /* Mobility excluding squares attacked by enemy pawns */
+        Bitboard enemy_pawn_attacks = 0;
+        int sq2;
+        Bitboard ep = enemy_pawns;
+        while (ep != 0) {
+            sq2 = bitboard_pop_lsb(&ep);
+            enemy_pawn_attacks |= movegen_pawn_attacks[side == WHITE ? BLACK : WHITE][sq2];
+        }
+        int mobility = bitboard_popcount(movegen_bishop_attacks(square, all_occupancy) & ~own_occupancy & ~enemy_pawn_attacks);
 
         *mg_score += sign * eval_lookup_bonus(bishop_mobility_mg, mobility, 13);
         *eg_score += sign * eval_lookup_bonus(bishop_mobility_eg, mobility, 13);
@@ -520,6 +536,76 @@ static void eval_add_piece_activity_side(const Position *pos, Color side, int *m
 
         *mg_score += sign * eval_lookup_bonus(king_mobility_mg, mobility, 8);
         *eg_score += sign * eval_lookup_bonus(king_mobility_eg, mobility, 8);
+    }
+}
+
+static void eval_add_trapped_pieces_side(const Position *pos, Color side, int *mg_score, int *eg_score) {
+    int sign = side == WHITE ? 1 : -1;
+    Bitboard own_pawns = pos->piece_bitboards[piece_bitboard_index(make_piece(side, PAWN))];
+    Bitboard pieces;
+    int king_sq = bitboard_lsb(pos->piece_bitboards[piece_bitboard_index(make_piece(side, KING))]);
+
+    /* Trapped bishop: bishop on a7/h7 with own pawn blocking retreat (a6/h6 with pawn on b7/g7) */
+    pieces = pos->piece_bitboards[piece_bitboard_index(make_piece(side, BISHOP))];
+    while (pieces != 0) {
+        int sq = bitboard_pop_lsb(&pieces);
+        int file = bitboard_file_of(sq);
+        int rank = bitboard_rank_of(sq);
+        int relative_rank = side == WHITE ? rank : 7 - rank;
+
+        /* Bishop trapped on a7/a2 by pawn on b6/b3 */
+        if (file == 0 && relative_rank == 6) {
+            int blocking_sq = bitboard_make_square(1, side == WHITE ? 5 : 2);
+            if (position_get_piece(pos, blocking_sq) == make_piece(side, PAWN)) {
+                *mg_score -= sign * 80;
+                *eg_score -= sign * 40;
+            }
+        }
+        /* Bishop trapped on h7/h2 by pawn on g6/g3 */
+        if (file == 7 && relative_rank == 6) {
+            int blocking_sq = bitboard_make_square(6, side == WHITE ? 5 : 2);
+            if (position_get_piece(pos, blocking_sq) == make_piece(side, PAWN)) {
+                *mg_score -= sign * 80;
+                *eg_score -= sign * 40;
+            }
+        }
+
+        /* Bad bishop: bishop on same color as many own pawns */
+        {
+            int bishop_color = (file + rank) % 2; /* 0=light, 1=dark */
+            int pawns_on_color = 0;
+            Bitboard pawns = own_pawns;
+            while (pawns != 0) {
+                int psq = bitboard_pop_lsb(&pawns);
+                if ((bitboard_file_of(psq) + bitboard_rank_of(psq)) % 2 == bishop_color) {
+                    pawns_on_color++;
+                }
+            }
+            if (pawns_on_color >= 4) {
+                *mg_score -= sign * (pawns_on_color * 5);
+            }
+        }
+    }
+
+    /* Trapped rook: rook on a1/h1 with uncastled king on b1/g1 blocking it */
+    pieces = pos->piece_bitboards[piece_bitboard_index(make_piece(side, ROOK))];
+    while (pieces != 0) {
+        int sq = bitboard_pop_lsb(&pieces);
+        int file = bitboard_file_of(sq);
+        int relative_rank = side == WHITE ? bitboard_rank_of(sq) : 7 - bitboard_rank_of(sq);
+        int king_file = bitboard_file_of(king_sq);
+
+        /* Rook trapped on back rank by uncastled king */
+        if (relative_rank == 0 && (file == 0 || file == 7)) {
+            if ((king_file == 1 && file == 0) || (king_file == 6 && file == 7)) {
+                /* Rook blocked by king - only penalize if no castling rights */
+                if (!(pos->castling_rights & (side == WHITE ? (CASTLE_WHITE_KINGSIDE | CASTLE_WHITE_QUEENSIDE)
+                    : (CASTLE_BLACK_KINGSIDE | CASTLE_BLACK_QUEENSIDE)))) {
+                    *mg_score -= sign * 30;
+                    *eg_score -= sign * 10;
+                }
+            }
+        }
     }
 }
 
@@ -966,6 +1052,9 @@ int eval_evaluate(Position *pos) {
 
     eval_add_piece_activity_side(pos, WHITE, &mg_score, &eg_score);
     eval_add_piece_activity_side(pos, BLACK, &mg_score, &eg_score);
+
+    eval_add_trapped_pieces_side(pos, WHITE, &mg_score, &eg_score);
+    eval_add_trapped_pieces_side(pos, BLACK, &mg_score, &eg_score);
 
     eval_add_king_safety_side(pos, WHITE, &mg_score, &eg_score);
     eval_add_king_safety_side(pos, BLACK, &mg_score, &eg_score);

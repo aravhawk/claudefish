@@ -6,9 +6,11 @@ import { Chess } from "chess.js";
 import {
   buildMoveHistoryRows,
   collectCapturedPieces,
-  DIFFICULTY_LEVELS,
+  ELO_DEFAULT,
+  ELO_MAX,
+  ELO_MIN,
   formatEvaluationLabel,
-  getDifficultyConfig,
+  getEloConfig,
   getEvaluationFill,
   getGameResult,
   getUndoPlyCount,
@@ -32,17 +34,34 @@ test("parseUciMove handles standard moves and promotions", () => {
   assert.equal(parseUciMove("bad"), null);
 });
 
-test("difficulty helpers expose the exact configured engine settings", () => {
-  assert.deepEqual(
-    DIFFICULTY_LEVELS.map(({ key, depth, timeMs }) => ({ key, depth, timeMs })),
-    [
-      { key: "easy", depth: 2, timeMs: 200 },
-      { key: "medium", depth: 4, timeMs: 1000 },
-      { key: "hard", depth: 6, timeMs: 3000 },
-      { key: "maximum", depth: 12, timeMs: 5000 },
-    ],
-  );
-  assert.equal(getDifficultyConfig("maximum").label, "Maximum");
+test("ELO config maps ELO values to engine settings", () => {
+  assert.equal(ELO_MIN, 800);
+  assert.equal(ELO_MAX, 3200);
+  assert.equal(ELO_DEFAULT, 1500);
+
+  const minConfig = getEloConfig(ELO_MIN);
+  assert.equal(minConfig.elo, 800);
+  assert.ok(minConfig.depth >= 1);
+  assert.ok(minConfig.timeMs >= 50);
+
+  const maxConfig = getEloConfig(ELO_MAX);
+  assert.equal(maxConfig.elo, 3200);
+  assert.ok(maxConfig.depth >= 12);
+  assert.ok(maxConfig.timeMs >= 5000);
+
+  /* Higher ELO should give more depth and time */
+  assert.ok(maxConfig.depth > minConfig.depth);
+  assert.ok(maxConfig.timeMs > minConfig.timeMs);
+
+  /* Clamping */
+  const belowMin = getEloConfig(100);
+  assert.equal(belowMin.elo, ELO_MIN);
+  const aboveMax = getEloConfig(5000);
+  assert.equal(aboveMax.elo, ELO_MAX);
+
+  /* Label contains tier */
+  assert.ok(minConfig.label.includes("Beginner"));
+  assert.ok(maxConfig.label.includes("Grandmaster"));
 });
 
 test("formatEvaluationLabel formats centipawns and mate scores", () => {

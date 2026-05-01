@@ -23,6 +23,9 @@ void movorder_score_moves(
     Move killer_two,
     Move countermove,
     const int history[2][BOARD_SQUARES][BOARD_SQUARES],
+    const int *continuation_history,
+    PieceType prev_piece,
+    int prev_target,
     OrderedMoveList *ordered
 );
 bool movorder_pick_next(OrderedMoveList *ordered, size_t index, Move *out_move);

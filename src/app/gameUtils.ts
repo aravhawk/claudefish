@@ -5,6 +5,42 @@ import type { PieceCode } from "@/components/Board/boardUtils";
 export const SEARCH_MATE_SCORE = 30000;
 const MATE_DISPLAY_THRESHOLD = 29900;
 
+/* ELO-based difficulty system. The slider ranges from 800 to 3200 ELO.
+   ELO maps to search depth and time via interpolation. */
+
+export const ELO_MIN = 800;
+export const ELO_MAX = 3200;
+export const ELO_DEFAULT = 1500;
+
+export interface EloDifficultyConfig {
+  elo: number;
+  depth: number;
+  timeMs: number;
+  label: string;
+}
+
+export function getEloConfig(elo: number): EloDifficultyConfig {
+  const clamped = Math.max(ELO_MIN, Math.min(ELO_MAX, elo));
+  const t = (clamped - ELO_MIN) / (ELO_MAX - ELO_MIN); /* 0..1 */
+
+  /* Depth: 1 at 800 ELO -> 16 at 3200 ELO */
+  const depth = Math.round(1 + t * t * 15 + t * 4);
+
+  /* Time: 50ms at 800 ELO -> 8000ms at 3200 ELO */
+  const timeMs = Math.round(50 + t * t * 7950);
+
+  /* Label: rounded ELO with descriptive tier */
+  let label: string;
+  if (clamped < 1000) label = `ELO ${clamped} · Beginner`;
+  else if (clamped < 1400) label = `ELO ${clamped} · Casual`;
+  else if (clamped < 1800) label = `ELO ${clamped} · Club`;
+  else if (clamped < 2200) label = `ELO ${clamped} · Expert`;
+  else if (clamped < 2600) label = `ELO ${clamped} · Master`;
+  else label = `ELO ${clamped} · Grandmaster`;
+
+  return { elo: clamped, depth, timeMs, label };
+}
+
 export const DIFFICULTY_LEVELS = [
   {
     key: "easy",

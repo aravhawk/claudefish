@@ -39,9 +39,13 @@ static int movorder_score_move(
     Move killer_one,
     Move killer_two,
     Move countermove,
-    const int history[2][BOARD_SQUARES][BOARD_SQUARES]
+    const int history[2][BOARD_SQUARES][BOARD_SQUARES],
+    const int *continuation_history,
+    PieceType prev_piece,
+    int prev_target
 ) {
     Piece moving_piece;
+    PieceType moving_pt;
     int source;
     int target;
 
@@ -52,6 +56,7 @@ static int movorder_score_move(
     source = move_source(move);
     target = move_target(move);
     moving_piece = position_get_piece(pos, source);
+    moving_pt = piece_type(moving_piece);
 
     if (movorder_is_capture(move)) {
         int see_score = see_evaluate(pos, move);
@@ -75,11 +80,21 @@ static int movorder_score_move(
         return 700000;
     }
 
-    if (history != NULL) {
-        return history[pos->side_to_move][source][target];
+    {
+        int score = 0;
+        if (history != NULL) {
+            score += history[pos->side_to_move][source][target];
+        }
+        /* Continuation history bonus */
+        if (continuation_history != NULL && prev_piece >= PAWN && prev_piece <= KING &&
+            prev_target >= 0 && prev_target < BOARD_SQUARES && moving_pt >= PAWN && moving_pt <= KING) {
+            int idx = prev_piece * BOARD_SQUARES * PIECE_TYPE_NB * BOARD_SQUARES +
+                      prev_target * PIECE_TYPE_NB * BOARD_SQUARES +
+                      moving_pt * BOARD_SQUARES + target;
+            score += continuation_history[idx] / 2;
+        }
+        return score;
     }
-
-    return 0;
 }
 
 void movorder_score_moves(
@@ -90,6 +105,9 @@ void movorder_score_moves(
     Move killer_two,
     Move countermove,
     const int history[2][BOARD_SQUARES][BOARD_SQUARES],
+    const int *continuation_history,
+    PieceType prev_piece,
+    int prev_target,
     OrderedMoveList *ordered
 ) {
     size_t index;
@@ -107,7 +125,10 @@ void movorder_score_moves(
     ordered->count = moves->count;
     for (index = 0; index < moves->count; ++index) {
         ordered->entries[index].move = moves->moves[index];
-        ordered->entries[index].score = movorder_score_move(pos, moves->moves[index], tt_move, killer_one, killer_two, countermove, history);
+        ordered->entries[index].score = movorder_score_move(
+            pos, moves->moves[index], tt_move, killer_one, killer_two, countermove,
+            history, continuation_history, prev_piece, prev_target
+        );
     }
 }
 

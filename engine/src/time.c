@@ -63,6 +63,10 @@ void time_start(SearchTimer *timer, int limit_ms) {
 
     timer->start_ms = time_now_ms();
     timer->limit_ms = limit_ms;
+    timer->optimum_ms = limit_ms;
+    timer->maximum_ms = limit_ms;
+    timer->easy_move = false;
+    timer->unstable_pv = false;
 }
 
 double time_elapsed_ms(const SearchTimer *timer) {
@@ -74,5 +78,13 @@ double time_elapsed_ms(const SearchTimer *timer) {
 }
 
 bool time_is_expired(const SearchTimer *timer) {
-    return timer != NULL && timer->limit_ms > 0 && time_elapsed_ms(timer) >= (double) timer->limit_ms;
+    if (timer == NULL || timer->limit_ms <= 0) {
+        return false;
+    }
+
+    /* If easy move, stop at optimum time. If unstable, use maximum time. */
+    double elapsed = time_elapsed_ms(timer);
+    double threshold = timer->unstable_pv ? (double) timer->maximum_ms : (double) timer->optimum_ms;
+
+    return elapsed >= threshold;
 }

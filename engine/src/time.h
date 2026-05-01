@@ -19,6 +19,10 @@ typedef struct TimeControl {
 typedef struct SearchTimer {
     uint64_t start_ms;
     int limit_ms;
+    int optimum_ms;
+    int maximum_ms;
+    bool easy_move;
+    bool unstable_pv;
 } SearchTimer;
 
 uint64_t time_now_ms(void);

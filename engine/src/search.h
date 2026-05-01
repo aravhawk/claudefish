@@ -12,7 +12,8 @@ enum {
     SEARCH_INF = 32000,
     SEARCH_MATE_SCORE = 30000,
     SEARCH_MATE_BOUND = SEARCH_MATE_SCORE - SEARCH_MAX_PLY,
-    SEARCH_DELTA_MARGIN = 50
+    SEARCH_DELTA_MARGIN = 50,
+    SEARCH_MAX_THREADS = 8
 };
 
 typedef struct SearchIteration {
@@ -49,6 +50,7 @@ typedef struct SearchOptions {
     bool enable_reverse_futility;
     bool enable_iid;
     bool enable_singular_extensions;
+    bool enable_probcut;
 } SearchOptions;
 
 void search_init(void);
@@ -56,6 +58,8 @@ void search_reset_heuristics(void);
 SearchOptions search_get_options(void);
 void search_set_options(const SearchOptions *options);
 void search_reset_options(void);
+void search_set_threads(int threads);
+int search_get_threads(void);
 bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms, SearchResult *out_result);
 int search_extract_pv(Position *pos, int max_depth, Move *pv_out, int pv_capacity);
 bool search_move_to_uci(Move move, char buffer[6]);

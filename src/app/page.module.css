@@ -248,6 +248,75 @@
 /*  Difficulty pills                                                  */
 /* ------------------------------------------------------------------ */
 
+.eloValue {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: var(--theme-text);
+}
+
+.eloSliderRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.eloBound {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: var(--theme-text-soft);
+  min-width: 2.2rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.eloSlider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--theme-panel-border);
+  outline: none;
+  cursor: pointer;
+}
+
+.eloSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--theme-button-start), var(--theme-button-end));
+  border: 1px solid var(--theme-panel-border);
+  cursor: pointer;
+  transition: transform 100ms ease;
+}
+
+.eloSlider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.eloSlider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--theme-button-start), var(--theme-button-end));
+  border: 1px solid var(--theme-panel-border);
+  cursor: pointer;
+}
+
+.eloSlider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+}
+
+.eloSlider::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--theme-panel-border);
+}
+
 .difficultyPills {
   display: flex;
   border-radius: 0.45rem;

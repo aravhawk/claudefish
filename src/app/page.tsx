@@ -13,9 +13,11 @@ import styles from "./page.module.css";
 import {
   buildMoveHistoryRows,
   collectCapturedPieces,
-  DIFFICULTY_LEVELS,
+  ELO_DEFAULT,
+  ELO_MAX,
+  ELO_MIN,
   formatEvaluationLabel,
-  getDifficultyConfig,
+  getEloConfig,
   getEvaluationFill,
   getGameResult,
   getUndoPlyCount,
@@ -25,7 +27,6 @@ import {
   shouldShowLoadingOverlay,
   shouldEngineMove,
   toWhiteCentipawns,
-  type DifficultyKey,
   type GameResult,
   type ParsedUciMove,
 } from "./gameUtils";
@@ -51,12 +52,12 @@ export default function Home() {
   const [fenDraft, setFenDraft] = useState(STARTING_POSITION_FEN);
   const [isFenLoaderOpen, setIsFenLoaderOpen] = useState(false);
   const [playedMoves, setPlayedMoves] = useState<ParsedUciMove[]>([]);
-  const [difficulty, setDifficulty] = useState<DifficultyKey>("medium");
+  const [elo, setElo] = useState(ELO_DEFAULT);
   const [themeKey, setThemeKey] = useState<ThemeKey>("classic-wood");
   const [evaluation, setEvaluation] = useState<number | null>(null);
   const [positionError, setPositionError] = useState<string | null>(null);
   const [loadingDismissed, setLoadingDismissed] = useState(false);
-  const difficultyRef = useRef<DifficultyKey>(difficulty);
+  const eloRef = useRef(elo);
   const evaluationRequestIdRef = useRef(0);
   const engineSearchIdRef = useRef(0);
 
@@ -69,7 +70,7 @@ export default function Home() {
   const result = getGameResult(game);
   const historyRows = useMemo(() => buildMoveHistoryRows(history), [history]);
   const capturedPieces = useMemo(() => collectCapturedPieces(history), [history]);
-  const difficultyConfig = getDifficultyConfig(difficulty);
+  const eloConfig = getEloConfig(elo);
   const evaluationLabel = formatEvaluationLabel(evaluation);
   const evaluationFill = getEvaluationFill(evaluation);
   const moveCount = history.length;
@@ -90,8 +91,8 @@ export default function Home() {
   });
 
   useEffect(() => {
-    difficultyRef.current = difficulty;
-  }, [difficulty]);
+    eloRef.current = elo;
+  }, [elo]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -174,10 +175,10 @@ export default function Home() {
 
     const searchId = engineSearchIdRef.current + 1;
     const searchFen = currentFen;
-    const currentDifficulty = getDifficultyConfig(difficultyRef.current);
+    const currentElo = getEloConfig(eloRef.current);
     engineSearchIdRef.current = searchId;
 
-    void searchBestMove(searchFen, currentDifficulty.depth, currentDifficulty.timeMs)
+    void searchBestMove(searchFen, currentElo.depth, currentElo.timeMs)
       .then((bestMoveUci) => {
         if (engineSearchIdRef.current !== searchId) {
           return;
@@ -379,26 +380,22 @@ export default function Home() {
           </div>
 
           <div className={styles.controlGroup} role="group" aria-label="Difficulty">
-            <span className={styles.controlLabel}>Level</span>
-            <div className={styles.difficultyPills}>
-              {DIFFICULTY_LEVELS.map((option) => {
-                const isSelected = option.key === difficulty;
-
-                return (
-                  <button
-                    aria-pressed={isSelected}
-                    className={`${styles.diffPill} ${
-                      isSelected ? styles.diffPillActive : ""
-                    }`}
-                    key={option.key}
-                    onClick={() => setDifficulty(option.key)}
-                    title={`${option.label} — Depth ${option.depth}, ${formatTime(option.timeMs)}`}
-                    type="button"
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
+            <span className={styles.controlLabel}>
+              Strength <span className={styles.eloValue}>{eloConfig.elo}</span>
+            </span>
+            <div className={styles.eloSliderRow}>
+              <span className={styles.eloBound}>{ELO_MIN}</span>
+              <input
+                aria-label={`Engine strength: ELO ${elo}`}
+                className={styles.eloSlider}
+                max={ELO_MAX}
+                min={ELO_MIN}
+                onChange={(event) => setElo(Number(event.target.value))}
+                step={50}
+                type="range"
+                value={elo}
+              />
+              <span className={styles.eloBound}>{ELO_MAX}</span>
             </div>
           </div>
 
@@ -472,7 +469,7 @@ export default function Home() {
                 ♚
               </span>
               <span className={styles.playerName}>Claudefish</span>
-              <span className={styles.playerTag}>{difficultyConfig.label}</span>
+              <span className={styles.playerTag}>{eloConfig.label}</span>
               {isThinking ? (
                 <span className={styles.thinkingDot} aria-label="Thinking" />
               ) : null}
@@ -607,8 +604,4 @@ function getStatusLabel({
   }
 
   return game.turn() === "w" ? "Your move." : "Claudefish to move.";
-}
-
-function formatTime(timeMs: number): string {
-  return timeMs >= 1000 ? `${(timeMs / 1000).toFixed(0)}s` : `${timeMs}ms`;
 }

@@ -4,6 +4,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef __EMSCRIPTEN__
+#include <pthread.h>
+#endif
+
 #include "draw.h"
 #include "evaluate.h"
 #include "movorder.h"
@@ -18,11 +22,35 @@ typedef struct SearchContext {
     bool stop;
     Move killers[SEARCH_MAX_PLY][2];
     int history[2][BOARD_SQUARES][BOARD_SQUARES];
+    int *continuation_history; /* heap-allocated: [PT_NB*64*PT_NB*64] */
     Move countermoves[BOARD_SQUARES][BOARD_SQUARES];
     Move last_move;
+    PieceType last_piece_type;
+    int last_target;
 } SearchContext;
 
+enum {
+    CH_SIZE = PIECE_TYPE_NB * BOARD_SQUARES * PIECE_TYPE_NB * BOARD_SQUARES
+};
+
+#define CH_INDEX(pp, pt, cp, ct) ((pp) * BOARD_SQUARES * PIECE_TYPE_NB * BOARD_SQUARES + (pt) * PIECE_TYPE_NB * BOARD_SQUARES + (cp) * BOARD_SQUARES + (ct))
+
+static void search_ctx_init(SearchContext *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+    ctx->continuation_history = (int *) calloc(CH_SIZE, sizeof(int));
+    ctx->last_piece_type = (PieceType) -1;
+    ctx->last_target = -1;
+}
+
+static void search_ctx_cleanup(SearchContext *ctx) {
+    if (ctx->continuation_history != NULL) {
+        free(ctx->continuation_history);
+        ctx->continuation_history = NULL;
+    }
+}
+
 static const SearchOptions search_default_options = {
+    true,
     true,
     true,
     true,
@@ -44,8 +72,10 @@ static SearchOptions search_options = {
     true,
     true,
     true,
+    true,
     true
 };
+static int search_num_threads = 1;
 static int search_lmr_table[SEARCH_MAX_DEPTH + 1][MOVEGEN_MAX_MOVES + 1];
 static bool search_initialized = false;
 enum {
@@ -166,9 +196,43 @@ static void search_store_history(SearchContext *ctx, Color side, Move move, int 
     target = move_target(move);
     bonus = depth * depth;
 
-    ctx->history[side][source][target] += bonus;
+    /* History gravity: apply bonus with gravity to prevent saturation.
+       Formula: history += bonus - (history * |bonus| / 16384) */
+    ctx->history[side][source][target] += bonus -
+        (ctx->history[side][source][target] * (bonus < 0 ? -bonus : bonus)) / 16384;
+
     if (ctx->history[side][source][target] > 2000000) {
         ctx->history[side][source][target] /= 2;
+    }
+    if (ctx->history[side][source][target] < -2000000) {
+        ctx->history[side][source][target] /= 2;
+    }
+}
+
+static void search_store_continuation_history(SearchContext *ctx, PieceType prev_piece, int prev_target, PieceType curr_piece, int curr_target, int bonus) {
+    int idx;
+    int *entry;
+
+    if (ctx == NULL || ctx->continuation_history == NULL) {
+        return;
+    }
+    if (prev_piece < PAWN || prev_piece > KING || curr_piece < PAWN || curr_piece > KING) {
+        return;
+    }
+    if (prev_target < 0 || prev_target >= BOARD_SQUARES || curr_target < 0 || curr_target >= BOARD_SQUARES) {
+        return;
+    }
+
+    idx = CH_INDEX(prev_piece, prev_target, curr_piece, curr_target);
+    entry = &ctx->continuation_history[idx];
+
+    *entry += bonus - (*entry * (bonus < 0 ? -bonus : bonus)) / 16384;
+
+    if (*entry > 2000000) {
+        *entry /= 2;
+    }
+    if (*entry < -2000000) {
+        *entry /= 2;
     }
 }
 
@@ -372,6 +436,7 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
     }
 
     in_check = movegen_is_in_check(pos, (Color) pos->side_to_move);
+    tt_prefetch(pos->zobrist_hash);
     if (tt_probe(pos->zobrist_hash, &entry)) {
         tt_move = entry.best_move;
         static_eval = entry.static_eval;
@@ -427,7 +492,7 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
         }
     }
 
-    movorder_score_moves(pos, &candidate_moves, tt_move, 0, 0, 0, ctx->history, &ordered_moves);
+    movorder_score_moves(pos, &candidate_moves, tt_move, 0, 0, 0, ctx->history, ctx->continuation_history, (PieceType) -1, -1, &ordered_moves);
 
     for (index = 0; index < ordered_moves.count; ++index) {
         Move move;
@@ -489,7 +554,8 @@ static int search_negamax(
     int alpha,
     int beta,
     int ply,
-    bool allow_null_move
+    bool allow_null_move,
+    int prev_static_eval
 ) {
     TTEntry entry;
     Move tt_move = 0;
@@ -515,6 +581,7 @@ static int search_negamax(
     }
 
     in_check = movegen_is_in_check(pos, (Color) pos->side_to_move);
+    tt_prefetch(pos->zobrist_hash);
     if (draw_is_draw(pos)) {
         return draw_score(pos);
     }
@@ -539,6 +606,9 @@ static int search_negamax(
         static_eval = eval_evaluate(pos);
     }
 
+    /* Improving: is our static eval better than 2 plies ago? */
+    bool improving = ply > 0 && prev_static_eval != -SEARCH_INF && static_eval > prev_static_eval;
+
     if (search_options.enable_razoring &&
         !pv_node &&
         depth <= 3 &&
@@ -558,16 +628,17 @@ static int search_negamax(
 
     /* Reverse Futility Pruning (Static Null Move Pruning):
        If static eval - margin >= beta at shallow depth and not in check,
-       the position is so good that we can safely return beta. */
+       the position is so good that we can safely return beta.
+       Use a larger margin on non-improving nodes (more likely to be overvalued). */
     if (search_options.enable_reverse_futility &&
         !pv_node &&
         depth <= 3 &&
         !in_check &&
-        static_eval - (80 * depth) >= beta &&
+        static_eval - ((80 + (improving ? 0 : 40)) * depth) >= beta &&
         beta < SEARCH_MATE_BOUND &&
         alpha > -SEARCH_MATE_BOUND &&
         search_has_non_pawn_material(pos, (Color) pos->side_to_move)) {
-        return static_eval - (80 * depth);
+        return static_eval - ((80 + (improving ? 0 : 40)) * depth);
     }
 
     if (search_options.enable_null_move_pruning &&
@@ -581,11 +652,16 @@ static int search_negamax(
         search_has_non_pawn_material(pos, (Color) pos->side_to_move) &&
         search_total_non_king_pieces(pos) > 3 &&
         !search_is_pawn_only_endgame(pos)) {
-        int reduction = depth >= 6 ? 3 : 2;
+        /* Dynamic null move reduction: base R increases with depth,
+           additional reduction when eval is significantly above beta */
+        int eval_margin = static_eval - beta;
+        int reduction = 3 + (depth / 6) + (eval_margin > 200 ? 1 : 0) + (eval_margin > 600 ? 1 : 0);
+        if (reduction > depth - 2) reduction = depth - 2;
+        if (reduction < 2) reduction = 2;
         int null_depth = depth - reduction - 1;
 
         if (null_depth > 0 && movegen_make_null_move(pos)) {
-            int null_score = -search_negamax(pos, ctx, null_depth, -beta, -beta + 1, ply + 1, false);
+            int null_score = -search_negamax(pos, ctx, null_depth, -beta, -beta + 1, ply + 1, false, -static_eval);
 
             movegen_unmake_null_move(pos);
             if (ctx->stop) {
@@ -595,6 +671,31 @@ static int search_negamax(
             if (null_score >= beta) {
                 tt_store(pos->zobrist_hash, depth, null_score, static_eval, 0, TT_FLAG_BETA, ply);
                 return null_score;
+            }
+        }
+    }
+
+    /* ProbCut: at non-PV nodes with sufficient depth, if static eval is significantly
+       above beta, do a shallow verification search. If it still beats beta + margin,
+       we can safely prune. */
+    if (search_options.enable_probcut &&
+        !pv_node &&
+        depth >= 5 &&
+        !in_check &&
+        abs(beta) < SEARCH_MATE_BOUND) {
+        int probcut_margin = depth * 40 + 100;
+        int probcut_beta = beta + probcut_margin;
+
+        if (static_eval >= probcut_beta) {
+            int probcut_depth = depth - 4;
+            if (probcut_depth < 1) probcut_depth = 1;
+
+            /* Verify with a search at reduced depth with widened beta */
+            int probcut_score = search_negamax(pos, ctx, probcut_depth, probcut_beta - 1, probcut_beta, ply, true, -SEARCH_INF);
+            if (ctx->stop) return 0;
+
+            if (probcut_score >= probcut_beta) {
+                return probcut_score;
             }
         }
     }
@@ -612,7 +713,7 @@ static int search_negamax(
         iid_ctx = *ctx;
         iid_ctx.stop = false;
 
-        search_negamax(pos, &iid_ctx, iid_depth, alpha, beta, ply, true);
+        search_negamax(pos, &iid_ctx, iid_depth, alpha, beta, ply, true, -SEARCH_INF);
         if (!iid_ctx.stop) {
             TTEntry iid_entry;
             if (tt_probe(pos->zobrist_hash, &iid_entry) && iid_entry.best_move != 0) {
@@ -641,6 +742,9 @@ static int search_negamax(
             ctx->killers[ply][1],
             countermove,
             ctx->history,
+            ctx->continuation_history,
+            ctx->last_piece_type,
+            ctx->last_target,
             &ordered_moves
         );
     }
@@ -682,7 +786,7 @@ static int search_negamax(
 
             if (excl_moves.count > 0) {
                 OrderedMoveList excl_ordered;
-                movorder_score_moves(pos, &excl_moves, 0, ctx->killers[ply][0], ctx->killers[ply][1], 0, ctx->history, &excl_ordered);
+                movorder_score_moves(pos, &excl_moves, 0, ctx->killers[ply][0], ctx->killers[ply][1], 0, ctx->history, ctx->continuation_history, (PieceType) -1, -1, &excl_ordered);
 
                 /* Search each excluded move to see if any beat singular_beta */
                 bool move_is_singular = true;
@@ -696,7 +800,7 @@ static int search_negamax(
                         continue;
                     }
                     {
-                        int excl_score = -search_negamax(pos, &singular_ctx, singular_depth, -singular_beta - 1, -singular_beta, ply + 1, true);
+                        int excl_score = -search_negamax(pos, &singular_ctx, singular_depth, -singular_beta - 1, -singular_beta, ply + 1, true, -SEARCH_INF);
                         movegen_unmake_move(pos);
                         if (singular_ctx.stop) {
                             move_is_singular = false;
@@ -765,6 +869,11 @@ static int search_negamax(
                 search_store_killer(ctx, ply, move);
                 search_store_countermove(ctx, move);
                 search_store_history(ctx, side_to_move, move, depth);
+                if (search_is_quiet_move(move)) {
+                    search_store_continuation_history(ctx, ctx->last_piece_type, ctx->last_target,
+                        piece_type(position_get_piece(pos, move_source(move))), move_target(move),
+                        depth * depth);
+                }
                 tt_store(pos->zobrist_hash, depth, score, static_eval, move, TT_FLAG_BETA, ply);
                 return score;
             }
@@ -783,14 +892,15 @@ static int search_negamax(
             continue;
         }
 
-        /* Late Move Pruning: at shallow depths, skip quiet moves late in the move list */
+        /* Late Move Pruning: at shallow depths, skip quiet moves late in the move list.
+           Reduce pruning on improving nodes since we're less likely to be in Zugzwang. */
         if (search_options.enable_lmp &&
             !pv_node &&
             depth <= 3 &&
             !in_check &&
             quiet_move &&
             !gives_check &&
-            move_number > (3 + depth * depth)) {
+            move_number > (3 + depth * depth + (improving ? 3 : 0))) {
             movegen_unmake_move(pos);
             continue;
         }
@@ -826,9 +936,15 @@ static int search_negamax(
 
         if (first_move) {
             Move prev_move = ctx->last_move;
+            PieceType prev_pt = ctx->last_piece_type;
+            int prev_tgt = ctx->last_target;
             ctx->last_move = move;
-            score = -search_negamax(pos, ctx, child_depth, -beta, -alpha, ply + 1, true);
+            ctx->last_piece_type = piece_type(position_get_piece(pos, move_source(move)));
+            ctx->last_target = move_target(move);
+            score = -search_negamax(pos, ctx, child_depth, -beta, -alpha, ply + 1, true, -static_eval);
             ctx->last_move = prev_move;
+            ctx->last_piece_type = prev_pt;
+            ctx->last_target = prev_tgt;
             first_move = false;
         } else {
             int reduced_depth = child_depth - reduction;
@@ -839,12 +955,18 @@ static int search_negamax(
 
             {
                 Move prev_move = ctx->last_move;
+                PieceType prev_pt = ctx->last_piece_type;
+                int prev_tgt = ctx->last_target;
                 ctx->last_move = move;
-                score = -search_negamax(pos, ctx, reduced_depth, -alpha - 1, -alpha, ply + 1, true);
+                ctx->last_piece_type = piece_type(position_get_piece(pos, move_source(move)));
+                ctx->last_target = move_target(move);
+                score = -search_negamax(pos, ctx, reduced_depth, -alpha - 1, -alpha, ply + 1, true, -static_eval);
                 if (!ctx->stop && ((reduction > 0 && score > alpha - 64) || (reduction == 0 && score > alpha))) {
-                    score = -search_negamax(pos, ctx, child_depth, -beta, -alpha, ply + 1, true);
+                    score = -search_negamax(pos, ctx, child_depth, -beta, -alpha, ply + 1, true, -static_eval);
                 }
                 ctx->last_move = prev_move;
+                ctx->last_piece_type = prev_pt;
+                ctx->last_target = prev_tgt;
             }
         }
 
@@ -866,6 +988,11 @@ static int search_negamax(
             search_store_killer(ctx, ply, move);
             search_store_countermove(ctx, move);
             search_store_history(ctx, side_to_move, move, depth);
+            if (search_is_quiet_move(move)) {
+                search_store_continuation_history(ctx, ctx->last_piece_type, ctx->last_target,
+                    piece_type(position_get_piece(pos, move_source(move))), move_target(move),
+                    depth * depth);
+            }
             tt_store(pos->zobrist_hash, depth, score, static_eval, move, TT_FLAG_BETA, ply);
             return score;
         }
@@ -913,33 +1040,55 @@ int search_extract_pv(Position *pos, int max_depth, Move *pv_out, int pv_capacit
     return length;
 }
 
-bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms, SearchResult *out_result) {
+/* ---- Lazy SMP Multi-threading ---- */
+
+typedef struct SearchThreadData {
+    Position pos;
     SearchContext ctx;
     SearchResult result;
+    int max_depth;
+    int time_limit_ms;
+    int thread_id;
+    bool finished;
+    bool is_main;
+} SearchThreadData;
+
+static volatile bool smp_stop_flag = false;
+
+static void *search_thread_worker(void *arg) {
+    SearchThreadData *data = (SearchThreadData *) arg;
+    SearchResult *result = &data->result;
     int previous_score = 0;
     bool have_previous_score = false;
     int depth;
+    int start_depth = data->thread_id == 0 ? 1 : 1 + data->thread_id;
 
-    if (pos == NULL || max_depth <= 0) {
-        return false;
+    search_ctx_init(&data->ctx);
+    memset(result, 0, sizeof(*result));
+
+    time_start(&data->ctx.timer, data->time_limit_ms);
+
+    /* Adaptive time management: set optimum and maximum time bounds */
+    if (data->is_main && data->time_limit_ms > 0) {
+        int total = data->time_limit_ms;
+        data->ctx.timer.optimum_ms = total * 60 / 100;  /* 60% of allocated time */
+        data->ctx.timer.maximum_ms = total * 95 / 100;   /* 95% hard limit */
+        data->ctx.timer.limit_ms = total;
     }
 
-    search_init();
-    memset(&ctx, 0, sizeof(ctx));
-    memset(&result, 0, sizeof(result));
+    Move prev_best_move = 0;
+    int stable_count = 0;
 
-    if (max_depth > SEARCH_MAX_DEPTH) {
-        max_depth = SEARCH_MAX_DEPTH;
-    }
-
-    time_start(&ctx.timer, time_limit_ms);
-    tt_new_search();
-
-    for (depth = 1; depth <= max_depth; ++depth) {
+    for (depth = start_depth; depth <= data->max_depth; ++depth) {
         Move pv[SEARCH_MAX_PLY];
-        uint64_t previous_nodes = ctx.nodes + ctx.qnodes;
+        uint64_t previous_nodes = data->ctx.nodes + data->ctx.qnodes;
         int pv_length;
         int score;
+
+        /* Check stop flag from other threads */
+        if (smp_stop_flag) {
+            data->ctx.stop = true;
+        }
 
         if (search_options.enable_aspiration_windows && have_previous_score && depth >= 4) {
             const int aspiration_margins[] = { 50, 200 };
@@ -951,8 +1100,9 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
                 int alpha = previous_score - aspiration_margins[margin_index];
                 int beta = previous_score + aspiration_margins[margin_index];
 
-                score = search_negamax(pos, &ctx, depth, alpha, beta, 0, true);
-                if (ctx.stop) {
+                score = search_negamax(&data->pos, &data->ctx, depth, alpha, beta, 0, true, -SEARCH_INF);
+                if (data->ctx.stop || smp_stop_flag) {
+                    data->ctx.stop = true;
                     break;
                 }
 
@@ -962,49 +1112,181 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
                 }
             }
 
-            if (!ctx.stop && !resolved) {
-                score = search_negamax(pos, &ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true);
+            if (!data->ctx.stop && !smp_stop_flag && !resolved) {
+                score = search_negamax(&data->pos, &data->ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true, -SEARCH_INF);
             }
         } else {
-            score = search_negamax(pos, &ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true);
+            score = search_negamax(&data->pos, &data->ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true, -SEARCH_INF);
         }
 
-        if (ctx.stop) {
+        if (data->ctx.stop || smp_stop_flag) {
             break;
         }
 
-        pv_length = search_extract_pv(pos, depth, pv, SEARCH_MAX_PLY);
+        pv_length = search_extract_pv(&data->pos, depth, pv, SEARCH_MAX_PLY);
 
-        result.score = score;
-        result.completed_depth = depth;
-        result.best_move = pv_length > 0 ? pv[0] : tt_probe_move(pos->zobrist_hash);
-        result.nodes = ctx.nodes;
-        result.qnodes = ctx.qnodes;
-        result.elapsed_ms = search_elapsed_ms(&ctx);
-        result.iteration_count = depth;
-        search_copy_pv(result.pv, &result.pv_length, pv, pv_length);
+        result->score = score;
+        result->completed_depth = depth;
+        result->best_move = pv_length > 0 ? pv[0] : tt_probe_move(data->pos.zobrist_hash);
+        result->nodes = data->ctx.nodes;
+        result->qnodes = data->ctx.qnodes;
+        result->elapsed_ms = search_elapsed_ms(&data->ctx);
+        result->iteration_count = depth;
+        search_copy_pv(result->pv, &result->pv_length, pv, pv_length);
 
-        result.iterations[depth - 1].depth = depth;
-        result.iterations[depth - 1].score = score;
-        result.iterations[depth - 1].nodes = (ctx.nodes + ctx.qnodes) - previous_nodes;
-        result.iterations[depth - 1].best_move = result.best_move;
+        result->iterations[depth - 1].depth = depth;
+        result->iterations[depth - 1].score = score;
+        result->iterations[depth - 1].nodes = (data->ctx.nodes + data->ctx.qnodes) - previous_nodes;
+        result->iterations[depth - 1].best_move = result->best_move;
         search_copy_pv(
-            result.iterations[depth - 1].pv,
-            &result.iterations[depth - 1].pv_length,
+            result->iterations[depth - 1].pv,
+            &result->iterations[depth - 1].pv_length,
             pv,
             pv_length
         );
 
         previous_score = score;
         have_previous_score = true;
+
+        /* Adaptive time management on main thread */
+        if (data->is_main && data->time_limit_ms > 0) {
+            Move current_best = result->best_move;
+
+            if (current_best == prev_best_move) {
+                stable_count++;
+                /* Best move stable for 3+ iterations: easy move, reduce time */
+                if (stable_count >= 3 && depth >= 5) {
+                    data->ctx.timer.easy_move = true;
+                    data->ctx.timer.optimum_ms = data->time_limit_ms * 35 / 100;
+                }
+            } else {
+                /* Best move changed: unstable, increase time */
+                stable_count = 0;
+                data->ctx.timer.unstable_pv = true;
+                data->ctx.timer.optimum_ms = data->time_limit_ms * 75 / 100;
+            }
+            prev_best_move = current_best;
+        }
+
+        /* Main thread signals stop to helpers when time is up or depth reached */
+        if (data->is_main && time_is_expired(&data->ctx.timer)) {
+            smp_stop_flag = true;
+            break;
+        }
     }
 
-    result.stopped = ctx.stop;
-    result.elapsed_ms = search_elapsed_ms(&ctx);
+    result->stopped = data->ctx.stop || smp_stop_flag;
+    result->elapsed_ms = search_elapsed_ms(&data->ctx);
+    data->finished = true;
+
+    return NULL;
+}
+
+bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms, SearchResult *out_result) {
+    SearchThreadData threads[SEARCH_MAX_THREADS];
+#ifndef __EMSCRIPTEN__
+    pthread_t thread_handles[SEARCH_MAX_THREADS];
+#endif
+    int num_threads;
+    int i;
+    SearchResult best_result;
+
+    if (pos == NULL || max_depth <= 0) {
+        return false;
+    }
+
+    search_init();
+
+    if (max_depth > SEARCH_MAX_DEPTH) {
+        max_depth = SEARCH_MAX_DEPTH;
+    }
+
+    num_threads = search_num_threads;
+    if (num_threads < 1) num_threads = 1;
+    if (num_threads > SEARCH_MAX_THREADS) num_threads = SEARCH_MAX_THREADS;
+
+    tt_new_search();
+    smp_stop_flag = false;
+
+    /* Initialize all thread data */
+    for (i = 0; i < num_threads; ++i) {
+        threads[i].pos = *pos;
+        threads[i].max_depth = max_depth;
+        threads[i].time_limit_ms = time_limit_ms;
+        threads[i].thread_id = i;
+        threads[i].finished = false;
+        threads[i].is_main = (i == 0);
+        search_ctx_init(&threads[i].ctx);
+        memset(&threads[i].result, 0, sizeof(threads[i].result));
+    }
+
+#ifdef __EMSCRIPTEN__
+    /* WASM: single-threaded fallback */
+    search_thread_worker(&threads[0]);
+#else
+    /* Native: use pthreads for Lazy SMP */
+    if (num_threads == 1) {
+        search_thread_worker(&threads[0]);
+    } else {
+        /* Launch helper threads first */
+        for (i = 1; i < num_threads; ++i) {
+            pthread_create(&thread_handles[i], NULL, search_thread_worker, &threads[i]);
+        }
+
+        /* Run main thread (thread 0) in the current thread */
+        search_thread_worker(&threads[0]);
+
+        /* Signal stop to any remaining helpers */
+        smp_stop_flag = true;
+
+        /* Wait for all helpers to finish */
+        for (i = 1; i < num_threads; ++i) {
+            pthread_join(thread_handles[i], NULL);
+        }
+    }
+#endif
+
+    /* Collect the best result from all threads.
+       Prefer the deepest completed depth, then best score. */
+    best_result = threads[0].result;
+    for (i = 1; i < num_threads; ++i) {
+        if (threads[i].result.completed_depth > best_result.completed_depth ||
+            (threads[i].result.completed_depth == best_result.completed_depth &&
+             threads[i].result.score > best_result.score)) {
+            best_result = threads[i].result;
+        }
+    }
+
+    /* Aggregate node counts from all threads */
+    {
+        uint64_t total_nodes = 0;
+        uint64_t total_qnodes = 0;
+        for (i = 0; i < num_threads; ++i) {
+            total_nodes += threads[i].result.nodes;
+            total_qnodes += threads[i].result.qnodes;
+        }
+        best_result.nodes = total_nodes;
+        best_result.qnodes = total_qnodes;
+    }
+
+    /* Cleanup per-thread search contexts */
+    for (i = 0; i < num_threads; ++i) {
+        search_ctx_cleanup(&threads[i].ctx);
+    }
 
     if (out_result != NULL) {
-        *out_result = result;
+        *out_result = best_result;
     }
 
-    return result.completed_depth > 0;
+    return best_result.completed_depth > 0;
+}
+
+void search_set_threads(int threads) {
+    if (threads < 1) threads = 1;
+    if (threads > SEARCH_MAX_THREADS) threads = SEARCH_MAX_THREADS;
+    search_num_threads = threads;
+}
+
+int search_get_threads(void) {
+    return search_num_threads;
 }
