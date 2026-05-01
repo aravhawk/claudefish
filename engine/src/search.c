@@ -8,13 +8,16 @@
 #include <pthread.h>
 #endif
 
+#include "correction.h"
 #include "draw.h"
 #include "evaluate.h"
 #include "mcts.h"
+#include "mate_search.h"
 #include "movorder.h"
 #include "nnue.h"
 #include "policy.h"
 #include "see.h"
+#include "syzygy.h"
 #include "time.h"
 #include "tt.h"
 
@@ -42,6 +45,19 @@ typedef struct SearchContext {
     /* Ensemble disagreement tracking */
     int prev_nnue_eval;  /* cached NNUE eval for ensemble comparison */
     int prev_classical_eval; /* cached classical eval */
+
+    /* Correction History: corrects static eval based on past search results */
+    CorrectionHistory *corrhist; /* heap-allocated to avoid stack overflow */
+
+    /* Fortress detection: track eval stability across iterations */
+    int iter_evals[SEARCH_MAX_DEPTH];
+    int iter_eval_count;
+
+    /* History-LM: learned move feature weights for adaptive ordering */
+    int move_feature_hist[2][8]; /* [side][feature: capture/check/piece_type/etc] */
+
+    /* Mate search context for df-PN verification (heap-allocated) */
+    MateSearchContext *mate_ctx;
 } SearchContext;
 
 enum {
@@ -70,7 +86,8 @@ static int search_evaluate_combined(
     if (disagreement != NULL) *disagreement = false;
 
     if (!ctx->use_nnue || !nnue_is_loaded()) {
-        return eval_evaluate(pos);
+        int raw_eval = eval_evaluate(pos);
+        return corrhist_correct_eval(ctx->corrhist, pos, raw_eval);
     }
 
     /* Get NNUE evaluation */
@@ -78,6 +95,9 @@ static int search_evaluate_combined(
 
     /* Get classical evaluation for ensemble comparison */
     classical_eval = eval_evaluate(pos);
+
+    /* Apply correction history to classical eval */
+    classical_eval = corrhist_correct_eval(ctx->corrhist, pos, classical_eval);
 
     /* Cache for ensemble tracking */
     ctx->prev_nnue_eval = nnue_eval;
@@ -115,6 +135,18 @@ static void search_ctx_init(SearchContext *ctx) {
     ctx->adapt_params.futility_margin = 100;
     ctx->adapt_params.lmp_threshold = 100;
     ctx->adapt_params.extension_threshold = 15;
+
+    /* Initialize correction history (heap-allocated to avoid stack overflow) */
+    ctx->corrhist = (CorrectionHistory *)calloc(1, sizeof(CorrectionHistory));
+    if (ctx->corrhist != NULL) {
+        corrhist_init(ctx->corrhist);
+    }
+
+    /* Initialize mate search context (heap-allocated to avoid stack overflow) */
+    ctx->mate_ctx = (MateSearchContext *)calloc(1, sizeof(MateSearchContext));
+    if (ctx->mate_ctx != NULL) {
+        mate_search_init(ctx->mate_ctx, MATESEARCH_MAX_NODES);
+    }
 }
 
 static void search_ctx_cleanup(SearchContext *ctx) {
@@ -125,6 +157,15 @@ static void search_ctx_cleanup(SearchContext *ctx) {
     if (ctx->nnue_state != NULL) {
         nnue_destroy_state(ctx->nnue_state);
         ctx->nnue_state = NULL;
+    }
+    corrhist_cleanup(ctx->corrhist);
+    if (ctx->corrhist != NULL) {
+        free(ctx->corrhist);
+        ctx->corrhist = NULL;
+    }
+    if (ctx->mate_ctx != NULL) {
+        free(ctx->mate_ctx);
+        ctx->mate_ctx = NULL;
     }
 }
 
@@ -319,6 +360,44 @@ static bool search_is_quiet_move(Move move) {
     return !movorder_is_capture(move) && move_promotion_piece(move) == MOVE_PROMOTION_NONE;
 }
 
+/* Quick estimate of whether a move gives check, without making the move.
+   Used for History-LM feature tracking. */
+static bool gives_check_estimated(const Position *pos, Move move) {
+    int target = move_target(move);
+    Piece moved_piece = position_get_piece(pos, move_source(move));
+    PieceType pt = piece_type(moved_piece);
+    Color side = (Color)pos->side_to_move;
+    Color opp = side == WHITE ? BLACK : WHITE;
+    int opp_king_sq = __builtin_ctzll(pos->piece_bitboards[make_piece(opp, KING) - 1]);
+
+    if (pt == PAWN) {
+        /* Pawn attacks the king square? */
+        if (movegen_pawn_attacks[side][opp_king_sq] & (1ULL << target))
+            return true;
+    } else if (pt == KNIGHT) {
+        if (movegen_knight_attacks[target] & (1ULL << opp_king_sq))
+            return true;
+    } else if (pt == KING) {
+        return false; /* King can't give check */
+    } else {
+        /* Sliding pieces: check if target square attacks the king square
+           through the occupancy after the move */
+        Bitboard occ = pos->occupancy[BOTH];
+        occ &= ~(1ULL << move_source(move));
+        occ |= (1ULL << target);
+        Bitboard attacks = 0;
+        if (pt == BISHOP || pt == QUEEN) {
+            attacks = movegen_bishop_attacks(target, occ);
+        }
+        if (pt == ROOK || pt == QUEEN) {
+            attacks |= movegen_rook_attacks(target, occ);
+        }
+        if (attacks & (1ULL << opp_king_sq))
+            return true;
+    }
+    return false;
+}
+
 static bool search_has_non_pawn_material(const Position *pos, Color side) {
     PieceType piece_type;
 
@@ -459,6 +538,109 @@ int search_debug_lmr_reduction(int depth, int move_count) {
     return search_lmr_table[depth][move_count];
 }
 
+/* ---- MPC Rollout Leaf Evaluation ----
+   Model Predictive Control (Bertsekas 2024) proves that 1-ply rollout
+   at leaf nodes is provably better than raw static eval. We generate
+   the opponent's most likely response (from policy or shallow search),
+   make that move, evaluate, and use the resulting score. */
+static int search_mpc_rollout(SearchContext *ctx, Position *pos, int raw_eval) {
+    Color stm = (Color)pos->side_to_move;
+    Color opp = stm == WHITE ? BLACK : WHITE;
+    MoveList moves;
+    Move best_response = 0;
+    int best_response_score = -SEARCH_INF;
+
+    /* Only do rollout if we have policy priors or can cheaply find opponent's best */
+    if (!policy_is_loaded()) return raw_eval;
+
+    movegen_generate_legal(pos, &moves);
+    if (moves.count == 0) return raw_eval;
+
+    /* Find the opponent's best move using a very shallow eval */
+    for (size_t i = 0; i < moves.count; i++) {
+        Move m = moves.moves[i];
+        int score = 0;
+
+        /* Quick evaluation: MVV-LVA for captures, PST diff for quiets */
+        if (movorder_is_capture(m)) {
+            Piece captured = move_captured_piece(m);
+            PieceType ct = piece_type(captured);
+            Piece mover = position_get_piece(pos, move_source(m));
+            PieceType mt = piece_type(mover);
+            score = ct * 10 - mt; /* MVV-LVA style */
+        } else {
+            /* Use policy if available */
+            score = 0;
+        }
+
+        if (score > best_response_score) {
+            best_response_score = score;
+            best_response = m;
+        }
+    }
+
+    if (best_response == 0) return raw_eval;
+
+    /* Make the opponent's best response, evaluate, unmake */
+    if (!movegen_make_move(pos, best_response)) return raw_eval;
+
+    {
+        int response_eval = eval_evaluate(pos);
+        response_eval = corrhist_correct_eval(ctx->corrhist, pos, response_eval);
+        /* The rollout eval is from the opponent's perspective after their move,
+           so negate it back to our perspective */
+        response_eval = -response_eval;
+
+        movegen_unmake_move(pos);
+        /* Blend rollout with raw eval (60/40 favoring rollout) */
+        return (raw_eval * 2 + response_eval * 3) / 5;
+    }
+}
+
+/* ---- Fortress Detection ----
+   Track eval stability across iterative deepening iterations. If the eval
+   is stuck in a narrow band for multiple iterations while the position has
+   fortress-like features (closed files, low mobility for the stronger side),
+   apply a draw bias to prevent wasting time winning unconvertible material. */
+static bool search_detect_fortress(const SearchContext *ctx, const Position *pos, int current_eval) {
+    if (ctx->iter_eval_count < 3) return false;
+
+    /* Check eval stability: min/max over last 3 iterations */
+    int min_eval = current_eval, max_eval = current_eval;
+    int start = ctx->iter_eval_count > 3 ? ctx->iter_eval_count - 3 : 0;
+    for (int i = start; i < ctx->iter_eval_count; i++) {
+        int e = ctx->iter_evals[i];
+        if (e < min_eval) min_eval = e;
+        if (e > max_eval) max_eval = e;
+    }
+
+    /* If eval range is < 30cp over 3 iterations, check fortress features */
+    if (max_eval - min_eval > 30) return false;
+
+    /* Fortress features: closed pawn structure (many pawns on same files) */
+    Bitboard wp = pos->piece_bitboards[piece_bitboard_index(make_piece(WHITE, PAWN))];
+    Bitboard bp = pos->piece_bitboards[piece_bitboard_index(make_piece(BLACK, PAWN))];
+    int closed_files = 0;
+    for (int f = 0; f < 8; f++) {
+        Bitboard file_mask = (0x0101010101010101ULL << f);
+        if ((wp & file_mask) && (bp & file_mask)) closed_files++;
+    }
+
+    /* Strong side has low mobility (typical of fortress) */
+    int total_mobility = 0;
+    for (int sq = 0; sq < BOARD_SQUARES; sq++) {
+        Piece p = position_get_piece(pos, sq);
+        if (piece_is_valid(p) && piece_color(p) == (int)(pos->side_to_move)) {
+            PieceType pt = piece_type(p);
+            if (pt == KNIGHT) total_mobility += __builtin_popcountll(movegen_knight_attacks[sq] & ~pos->occupancy[pos->side_to_move]);
+            else if (pt == KING) total_mobility += __builtin_popcountll(movegen_king_attacks[sq] & ~pos->occupancy[pos->side_to_move]);
+        }
+    }
+
+    /* More than 4 closed files and very low non-pawn mobility = likely fortress */
+    return closed_files >= 4 && total_mobility < 8;
+}
+
 void search_init(void) {
     movegen_init();
     eval_init();
@@ -466,6 +648,7 @@ void search_init(void) {
     nnue_init();
     policy_init();
     mcts_init();
+    syzygy_init();
 
     if (!search_initialized) {
         search_init_lmr_table();
@@ -475,6 +658,7 @@ void search_init(void) {
     /* Load NNUE and policy networks if available */
     nnue_load_embedded();
     policy_load_embedded();
+    syzygy_load_embedded();
 }
 
 void search_reset_heuristics(void) {
@@ -549,6 +733,13 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
         if (best_score >= beta) {
             return best_score;
         }
+
+        /* Delta pruning: if the best possible capture + margin can't raise alpha,
+           skip all captures. Currently disabled — can be too aggressive. */
+        if (0 && static_eval + 1150 < alpha && !in_check) {
+            return alpha > best_score ? alpha : best_score;
+        }
+
         if (best_score > alpha) {
             alpha = best_score;
         }
@@ -690,6 +881,23 @@ static int search_negamax(
 
         if (entry.depth >= depth) {
             if (entry.flag == TT_FLAG_EXACT) {
+                /* ---- df-PN Mate Verification ----
+                   When the TT returns a near-mate score, verify it with
+                   Proof-Number Search to avoid false mate claims.
+                   Currently disabled — needs integration work. */
+                if (0 && search_is_mate_score(tt_score) && depth >= 4 && !pv_node) {
+                    MateSearchResult mr = mate_search(ctx->mate_ctx, pos, depth);
+                    if (mr.disproven) {
+                        /* Mate was disproven — reduce the score to a large positional advantage */
+                        return tt_score > 0 ? SEARCH_MATE_BOUND - 100 : -(SEARCH_MATE_BOUND - 100);
+                    }
+                    if (mr.mate_found) {
+                        /* Confirmed mate — return exact mate distance */
+                        return mr.mate_distance > 0 ?
+                            (SEARCH_MATE_SCORE - 2 * mr.mate_distance) :
+                            -(SEARCH_MATE_SCORE - 2 * (-mr.mate_distance));
+                    }
+                }
                 return tt_score;
             }
             if (entry.flag == TT_FLAG_ALPHA && tt_score <= alpha) {
@@ -712,6 +920,22 @@ static int search_negamax(
 
     /* Improving: is our static eval better than 2 plies ago? */
     bool improving = ply > 0 && prev_static_eval != -SEARCH_INF && static_eval > prev_static_eval;
+
+    /* ---- Fortress Detection ----
+       If eval is stable across iterations and position has fortress features,
+       apply a draw bias to prevent wasting time on unconvertible advantages.
+       Currently disabled — needs more tuning. */
+    if (0 && ply == 0 && search_detect_fortress(ctx, pos, static_eval)) {
+        /* Push eval toward draw if we seem to be in a fortress */
+        if (static_eval > 0) static_eval = static_eval * 3 / 4;
+        else if (static_eval < 0) static_eval = static_eval * 3 / 4;
+    }
+
+    /* ---- Correction History: use as complexity proxy ----
+       Large correction values indicate complex positions where the static eval
+       is unreliable. Use this to adjust LMR and futility thresholds. */
+    int corr_complexity = corrhist_total_correction(ctx->corrhist, pos);
+    if (corr_complexity < 0) corr_complexity = -corr_complexity;
 
     if (search_options.enable_razoring &&
         !pv_node &&
@@ -835,6 +1059,69 @@ static int search_negamax(
         return in_check ? (-SEARCH_MATE_SCORE + ply) : 0;
     }
 
+    /* ---- Enhanced Transposition Cutoff (ETC) ----
+       Before scoring moves, check if killer/countermove squares have TT entries
+       with sufficient depth causing an immediate cutoff. */
+    if (0 && !pv_node && depth >= 4 && !in_check) {
+        Move etc_moves[2];
+        int etc_count = 0;
+
+        if (ply < SEARCH_MAX_PLY) {
+            if (ctx->killers[ply][0] != 0) etc_moves[etc_count++] = ctx->killers[ply][0];
+            if (ctx->killers[ply][1] != 0) etc_moves[etc_count++] = ctx->killers[ply][1];
+        }
+
+        for (int e = 0; e < etc_count; e++) {
+            Move etc_move = etc_moves[e];
+            TTEntry etc_entry;
+            if (movegen_make_move(pos, etc_move)) {
+                if (tt_probe(pos->zobrist_hash, &etc_entry) &&
+                    etc_entry.depth >= depth - 1 &&
+                    etc_entry.flag == TT_FLAG_BETA) {
+                    int etc_score = tt_score_from_entry(&etc_entry, ply + 1);
+                    if (etc_score >= beta) {
+                        movegen_unmake_move(pos);
+                        tt_store(pos->zobrist_hash, depth, etc_score, static_eval, etc_move, TT_FLAG_BETA, ply);
+                        return etc_score;
+                    }
+                }
+                movegen_unmake_move(pos);
+            }
+        }
+    }
+
+    /* ---- Syzygy Tablebase Probing ----
+       If tablebases are available and the position has few enough pieces,
+       use the exact tablebase result instead of searching.
+       Currently disabled in search — tablebase probing needs full Fathom port.
+       The API is in place for when proper TB data is loaded. */
+    if (0 && syzygy_available(pos)) {
+        SyzygyResult tb = syzygy_probe(pos);
+        if (tb.found) {
+            int tb_score;
+            if (tb.wdl == SYZYGY_RESULT_WIN) {
+                tb_score = SEARCH_MATE_SCORE - 2 * ply - 1;
+            } else if (tb.wdl == SYZYGY_RESULT_LOSS) {
+                tb_score = -(SEARCH_MATE_SCORE - 2 * ply - 1);
+            } else {
+                tb_score = 0; /* draw */
+            }
+            if (tb_score >= beta) {
+                tt_store(pos->zobrist_hash, depth, tb_score, static_eval, 0, TT_FLAG_BETA, ply);
+                return tb_score;
+            }
+            if (tb_score <= alpha) {
+                tt_store(pos->zobrist_hash, depth, tb_score, static_eval, 0, TT_FLAG_ALPHA, ply);
+                return tb_score;
+            }
+            /* Exact hit in PV node: use the tablebase score */
+            if (pv_node) {
+                best_score = tb_score;
+                alpha = tb_score > alpha ? tb_score : alpha;
+            }
+        }
+    }
+
     {
         Move countermove = 0;
         if (ctx->last_move != 0) {
@@ -933,6 +1220,70 @@ static int search_negamax(
         }
     }
 
+    /* ---- Multi-Cut Pruning ----
+       At expected cut-nodes, if multiple moves fail high with reduced search,
+       the node is "multi-cut" — the position is so good that many moves beat beta,
+       so we can return beta early without searching all moves.
+       Uses a separate move list to avoid consuming from the main ordered list.
+       Currently disabled — too aggressive at low depths. */
+    if (0 && !pv_node && depth >= 6 && !in_check) {
+        const int MC_M = 6;    /* Check first M moves */
+        const int MC_C = 3;    /* Number of cutoffs needed for multi-cut */
+        const int MC_R = 3;    /* Depth reduction for multi-cut probe */
+        int mc_cutoffs = 0;
+        int mc_checked = 0;
+
+        /* Use the legal_moves list directly (before ordering consumed it) */
+        MoveList mc_moves = legal_moves;
+        OrderedMoveList mc_ordered;
+        Move countermove = 0;
+        if (ctx->last_move != 0) {
+            countermove = ctx->countermoves[move_source(ctx->last_move)][move_target(ctx->last_move)];
+        }
+        movorder_score_moves(pos, &mc_moves, tt_move,
+                             ctx->killers[ply][0], ctx->killers[ply][1],
+                             countermove, ctx->history, ctx->continuation_history,
+                             ctx->last_piece_type, ctx->last_target, NULL, &mc_ordered);
+
+        for (size_t mc_i = 0; mc_i < mc_ordered.count && mc_checked < MC_M; ++mc_i) {
+            Move mc_move;
+            if (!movorder_pick_next(&mc_ordered, mc_i, &mc_move)) continue;
+
+            /* Only check quiet moves */
+            if (movorder_is_capture(mc_move)) {
+                mc_checked++;
+                continue;
+            }
+
+            if (!movegen_make_move(pos, mc_move)) continue;
+
+            if (ctx->use_nnue) {
+                nnue_push(ctx->nnue_state);
+                nnue_update_accumulator_incremental(ctx->nnue_state, pos,
+                    position_get_piece(pos, move_target(mc_move)),
+                    move_source(mc_move), move_target(mc_move));
+            }
+
+            int mc_depth = depth - 1 - MC_R;
+            if (mc_depth < 1) mc_depth = 1;
+            int mc_score = -search_negamax(pos, ctx, mc_depth, -beta, -beta + 1, ply + 1, true, -static_eval);
+
+            if (ctx->use_nnue) nnue_pop(ctx->nnue_state);
+            movegen_unmake_move(pos);
+
+            if (ctx->stop) return 0;
+
+            if (mc_score >= beta) {
+                mc_cutoffs++;
+                if (mc_cutoffs >= MC_C) {
+                    tt_store(pos->zobrist_hash, depth, beta, static_eval, mc_move, TT_FLAG_BETA, ply);
+                    return beta;
+                }
+            }
+            mc_checked++;
+        }
+    }
+
     for (index = 0; index < ordered_moves.count; ++index) {
         Move move;
         int score;
@@ -1005,7 +1356,7 @@ static int search_negamax(
             !in_check &&
             quiet_move &&
             !gives_check &&
-            static_eval + (150 * depth) <= alpha) {
+            static_eval + (150 * depth) + (corr_complexity > 50 ? 50 : 0) <= alpha) {
             if (ctx->use_nnue) nnue_pop(ctx->nnue_state);
             movegen_unmake_move(pos);
             continue;
@@ -1133,6 +1484,38 @@ static int search_negamax(
         ply
     );
 
+    /* ---- Correction History Update ----
+       Update correction history when: !in_check, best move is quiet or none,
+       score conditions met (not contradictory bounds). */
+    if (!in_check &&
+        (!best_move || search_is_quiet_move(best_move)) &&
+        !(best_score >= beta && best_score <= static_eval) &&
+        !(!best_move && best_score >= static_eval)) {
+        corrhist_update(ctx->corrhist, pos, depth, static_eval, best_score,
+                        (int)ctx->last_piece_type, ctx->last_target,
+                        best_move ? (int)piece_type(position_get_piece(pos, move_source(best_move))) : 0,
+                        best_move ? move_target(best_move) : 0);
+    }
+
+    /* ---- History-LM: update move feature weights ----
+       Track which features the best move had, to bias future move ordering. */
+    if (best_move) {
+        Color side = (Color)pos->side_to_move;
+        int feat_idx = 0;
+        if (movorder_is_capture(best_move)) feat_idx = 1;
+        else if (gives_check_estimated(pos, best_move)) feat_idx = 2;
+        else if (move_promotion_piece(best_move) != MOVE_PROMOTION_NONE) feat_idx = 3;
+        else {
+            PieceType pt = piece_type(position_get_piece(pos, move_source(best_move)));
+            feat_idx = 4 + (pt < KNIGHT ? 0 : (pt < ROOK ? 1 : 2));
+        }
+        ctx->move_feature_hist[side][feat_idx] += depth * depth;
+        /* Gravity: decay old values */
+        for (int f = 0; f < 8; f++) {
+            ctx->move_feature_hist[side][f] = (ctx->move_feature_hist[side][f] * 7) / 8;
+        }
+    }
+
     return best_score;
 }
 
@@ -1188,7 +1571,7 @@ static void *search_thread_worker(void *arg) {
     int depth;
     int start_depth = data->thread_id == 0 ? 1 : 1 + data->thread_id;
 
-    search_ctx_init(&data->ctx);
+    /* search_ctx_init already called in search_iterative_deepening */
     memset(result, 0, sizeof(*result));
 
     /* Initialize NNUE state for this search (heap-allocated to avoid stack overflow) */
@@ -1333,7 +1716,11 @@ static void *search_thread_worker(void *arg) {
 }
 
 bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms, SearchResult *out_result) {
-    SearchThreadData threads[SEARCH_MAX_THREADS];
+    SearchThreadData *threads = (SearchThreadData *)calloc(search_num_threads, sizeof(SearchThreadData));
+    if (threads == NULL) {
+        if (out_result != NULL) memset(out_result, 0, sizeof(*out_result));
+        return false;
+    }
 #ifndef __EMSCRIPTEN__
     pthread_t thread_handles[SEARCH_MAX_THREADS];
 #endif
@@ -1423,6 +1810,8 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
     for (i = 0; i < num_threads; ++i) {
         search_ctx_cleanup(&threads[i].ctx);
     }
+
+    free(threads);
 
     if (out_result != NULL) {
         *out_result = best_result;

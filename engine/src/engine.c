@@ -3,11 +3,13 @@
 #include <string.h>
 
 #include "book.h"
+#include "correction.h"
 #include "draw.h"
 #include "evaluate.h"
 #include "nnue.h"
 #include "policy.h"
 #include "search.h"
+#include "syzygy.h"
 #include "time.h"
 
 enum {

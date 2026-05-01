@@ -20,6 +20,18 @@ enum {
     NNUE_HALFKP_DIM_PER_KING = 641,
     NNUE_HALFKP_INPUT_DIM = 64 * NNUE_HALFKP_DIM_PER_KING, /* = 41024 */
 
+    /* ---- Threat Input Features (Stockfish 18 SFNNv10 inspired) ----
+       For each non-king piece, we add a feature if it's attacked by an enemy
+       piece and another if it's attacked by an enemy pawn.
+       64 squares × 2 threat types × 2 colors = 256 extra features per king square.
+       New DIM_PER_KING = 641 + 256 = 897, total = 64 * 897 = 57408 */
+    NNUE_THREAT_INPUT_DIM = 256, /* 64 squares × 2 types × 2 colors */
+    NNUE_HALFKP_THREAT_DIM_PER_KING = NNUE_HALFKP_DIM_PER_KING + NNUE_THREAT_INPUT_DIM,
+    NNUE_TOTAL_INPUT_DIM = 64 * NNUE_HALFKP_THREAT_DIM_PER_KING, /* = 57408 */
+
+    /* Keep the old constant for backward compatibility with weight loading */
+    NNUE_INPUT_DIM = NNUE_TOTAL_INPUT_DIM,
+
     /* Network dimensions */
     NNUE_ACCUMULATOR_DIM = 256,
     NNUE_HIDDEN1_DIM = 32,

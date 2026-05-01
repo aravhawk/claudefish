@@ -1015,6 +1015,82 @@ int eval_calculate_phase(const Position *pos) {
     return eval_clamp(phase, 0, 256);
 }
 
+/* ---- Threat-Aware Evaluation ----
+   Evaluate which pieces are threatened by opponent attacks.
+   Heavily inspired by Stockfish 18's "Threat Input" features for SFNNv10.
+   A threatened piece is worth significantly less than an unthreatened one,
+   especially high-value pieces under attack by low-value attackers. */
+static void eval_add_threat_terms(const Position *pos, int *mg, int *eg) {
+    static const int threat_penalty_mg[PIECE_TYPE_NB] = { 0, 30, 30, 45, 80, 0 };
+    static const int threat_penalty_eg[PIECE_TYPE_NB] = { 0, 25, 25, 40, 70, 0 };
+    static const int threat_by_pawn_mg[PIECE_TYPE_NB] = { 0, 50, 50, 70, 120, 0 };
+    static const int threat_by_pawn_eg[PIECE_TYPE_NB] = { 0, 40, 40, 60, 100, 0 };
+
+    Color side;
+    for (side = WHITE; side <= BLACK; ++side) {
+        Color opp = side == WHITE ? BLACK : WHITE;
+        Bitboard our_pieces = pos->occupancy[side];
+        Bitboard their_pawns = pos->piece_bitboards[piece_bitboard_index(make_piece(opp, PAWN))];
+        Bitboard attacked_by_opp = 0;
+        int sign = side == WHITE ? 1 : -1;
+        int sq;
+
+        /* Compute all squares attacked by opponent */
+        for (sq = 0; sq < BOARD_SQUARES; sq++) {
+            if (movegen_is_square_attacked(pos, sq, opp)) {
+                attacked_by_opp |= (1ULL << sq);
+            }
+        }
+
+        /* Check each of our pieces: is it threatened? */
+        Bitboard our_threatened = our_pieces & attacked_by_opp;
+
+        while (our_threatened) {
+            sq = __builtin_ctzll(our_threatened);
+            our_threatened &= our_threatened - 1;
+
+            Piece p = position_get_piece(pos, sq);
+            if (!piece_is_valid(p) || piece_type(p) == KING || piece_type(p) == PAWN) continue;
+            PieceType pt = piece_type(p);
+
+            /* Is this piece specifically threatened by an enemy pawn? Much worse. */
+            bool threatened_by_pawn = (movegen_pawn_attacks[side][sq] & their_pawns) != 0;
+
+            if (threatened_by_pawn) {
+                *mg -= sign * threat_by_pawn_mg[pt];
+                *eg -= sign * threat_by_pawn_eg[pt];
+            } else {
+                *mg -= sign * threat_penalty_mg[pt];
+                *eg -= sign * threat_penalty_eg[pt];
+            }
+        }
+
+        /* Bonus for attacking opponent's high-value pieces */
+        Bitboard their_pieces = pos->occupancy[opp];
+        Bitboard our_attacks = 0;
+
+        for (sq = 0; sq < BOARD_SQUARES; sq++) {
+            if (movegen_is_square_attacked(pos, sq, side)) {
+                our_attacks |= (1ULL << sq);
+            }
+        }
+
+        Bitboard our_threats_to_them = their_pieces & our_attacks;
+        while (our_threats_to_them) {
+            sq = __builtin_ctzll(our_threats_to_them);
+            our_threats_to_them &= our_threats_to_them - 1;
+
+            Piece p = position_get_piece(pos, sq);
+            if (!piece_is_valid(p) || piece_type(p) == KING || piece_type(p) == PAWN) continue;
+            PieceType pt = piece_type(p);
+
+            /* Bonus is half the penalty (asymmetric: attacking > being attacked) */
+            *mg += sign * threat_penalty_mg[pt] / 2;
+            *eg += sign * threat_penalty_eg[pt] / 2;
+        }
+    }
+}
+
 int eval_evaluate(Position *pos) {
     int mg_score = 0;
     int eg_score = 0;
@@ -1067,6 +1143,16 @@ int eval_evaluate(Position *pos) {
         if (eg_phase > 128) {
             eval_add_endgame_terms(pos, &mg_score, &eg_score);
         }
+    }
+
+    /* ---- Threat-Aware Evaluation (Stockfish 18 inspired) ----
+       Add bonuses/penalties based on which pieces are threatened.
+       Currently disabled for stability — re-enable after tuning. */
+    if (0) {
+        int threat_mg = 0, threat_eg = 0;
+        eval_add_threat_terms(pos, &threat_mg, &threat_eg);
+        mg_score += threat_mg;
+        eg_score += threat_eg;
     }
 
     phase = eval_calculate_phase(pos);
