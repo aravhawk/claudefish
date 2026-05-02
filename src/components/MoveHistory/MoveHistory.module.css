@@ -20,7 +20,7 @@
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   color: var(--theme-text-soft);
 }
 
@@ -36,6 +36,7 @@
   font-size: 0.68rem;
   font-weight: 700;
   color: var(--theme-accent);
+  font-variant-numeric: tabular-nums;
 }
 
 .scrollArea {
@@ -43,6 +44,7 @@
   min-height: 0;
   padding-right: 0.2rem;
   scrollbar-color: var(--theme-scrollbar-thumb) transparent;
+  scrollbar-width: thin;
 }
 
 .scrollArea::-webkit-scrollbar {
@@ -56,7 +58,7 @@
 
 .list {
   display: grid;
-  gap: 0.1rem;
+  gap: 0.08rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -68,7 +70,7 @@
   align-items: center;
   padding: 0.38rem 0.5rem;
   border-radius: 0.35rem;
-  transition: background 120ms ease;
+  transition: background 160ms ease;
 }
 
 .row:hover {
@@ -80,6 +82,7 @@
   font-size: 0.68rem;
   font-weight: 600;
   color: var(--theme-text-soft);
+  font-variant-numeric: tabular-nums;
 }
 
 .moveCell {
@@ -87,14 +90,32 @@
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--theme-heading);
+  letter-spacing: 0.01em;
 }
 
 .emptyState {
   margin: 0;
-  padding: 1rem 0.5rem;
+  padding: 2rem 0.5rem;
   text-align: center;
   font-size: 0.78rem;
   color: var(--theme-text-soft);
+  display: grid;
+  gap: 0.65rem;
+  justify-items: center;
+  align-content: center;
+}
+
+.emptyState::before {
+  content: "♔";
+  display: block;
+  font-size: 2rem;
+  opacity: 0.3;
+  font-family:
+    "Noto Sans Symbols 2",
+    "Apple Symbols",
+    "Segoe UI Symbol",
+    "Arial Unicode MS",
+    serif;
 }
 
 @media (max-width: 560px) {

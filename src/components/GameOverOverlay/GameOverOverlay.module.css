@@ -12,7 +12,19 @@
       color-mix(in srgb, var(--theme-overlay) 78%, transparent),
       var(--theme-overlay)
     );
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(18px) saturate(1.15);
+  animation: overlayReveal 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes overlayReveal {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(18px) saturate(1.15);
+  }
 }
 
 .card {
@@ -29,18 +41,43 @@
   box-shadow:
     0 28px 70px var(--theme-board-shadow),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: cardReveal 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 150ms;
+}
+
+@keyframes cardReveal {
+  from {
+    opacity: 0;
+    transform: scale(0.9) translateY(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .cardWin {
   border-color: rgba(52, 211, 153, 0.32);
+  box-shadow:
+    0 28px 70px var(--theme-board-shadow),
+    0 0 50px rgba(52, 211, 153, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .cardLoss {
   border-color: rgba(248, 113, 113, 0.34);
+  box-shadow:
+    0 28px 70px var(--theme-board-shadow),
+    0 0 50px rgba(248, 113, 113, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .cardDraw {
   border-color: rgba(245, 189, 88, 0.32);
+  box-shadow:
+    0 28px 70px var(--theme-board-shadow),
+    0 0 50px rgba(245, 189, 88, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .eyebrow {
@@ -58,36 +95,47 @@
   font-size: clamp(1.7rem, 4vw, 2.35rem);
   line-height: 1.05;
   color: var(--theme-heading);
+  letter-spacing: -0.02em;
 }
 
 .detail {
   margin: 0;
   line-height: 1.6;
   color: var(--theme-text-muted);
+  font-size: 0.92rem;
 }
 
 .actionButton {
   appearance: none;
-  padding: 0.85rem 1.15rem;
+  padding: 0.85rem 1.4rem;
   border: 1px solid var(--theme-button-border);
   border-radius: 999px;
   background:
     linear-gradient(180deg, var(--theme-button-start), var(--theme-button-end));
   color: var(--theme-button-text);
   font-weight: 700;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
   cursor: pointer;
   transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background 160ms ease;
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    background 200ms ease;
 }
 
 .actionButton:hover,
 .actionButton:focus-visible {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   border-color: var(--theme-button-hover);
-  box-shadow: 0 18px 34px var(--theme-button-shadow);
+  box-shadow:
+    0 18px 34px var(--theme-button-shadow),
+    0 0 20px color-mix(in srgb, var(--theme-accent) 15%, transparent);
+}
+
+.actionButton:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 12px var(--theme-button-shadow);
 }
 
 @media (max-width: 560px) {

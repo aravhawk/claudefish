@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { Fraunces, JetBrains_Mono, Outfit } from "next/font/google";
+import { Fraunces, JetBrains_Mono, Onest } from "next/font/google";
 
 import "./globals.css";
 
-const outfit = Outfit({
+const onest = Onest({
   subsets: ["latin"],
   variable: "--font-body",
   display: "swap",
@@ -33,7 +33,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${outfit.variable} ${fraunces.variable} ${jetbrainsMono.variable}`}>
+      <body className={`${onest.variable} ${fraunces.variable} ${jetbrainsMono.variable}`}>
         {children}
       </body>
     </html>

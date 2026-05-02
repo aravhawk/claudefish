@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
   --font-body:
-    Outfit, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    Onest, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display:
     Fraunces, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --font-mono:
@@ -80,6 +80,7 @@ body {
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "kern" 1, "liga" 1;
 }
 
 button,
@@ -99,4 +100,18 @@ code {
 
 ::selection {
   background: var(--theme-accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 2px;
+}
+
+@keyframes grainShift {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-2%, -3%); }
+  30% { transform: translate(3%, 1%); }
+  50% { transform: translate(-1%, 4%); }
+  70% { transform: translate(2%, -2%); }
+  90% { transform: translate(-3%, 1%); }
 }
