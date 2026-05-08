@@ -33,6 +33,8 @@ interface EngineBindings {
   searchBestMove(depth: number, timeMs: number): string;
   evaluatePosition(): number;
   getLegalMovesCsv(): string;
+  searchSetThreads(n: number): void;
+  resetGame(): void;
 }
 
 let bindingsPromise: Promise<EngineBindings> | null = null;
@@ -77,6 +79,8 @@ function createBindings(module: EmscriptenModule): EngineBindings {
     ]),
     evaluatePosition: module.cwrap<[], number>("evaluate_position", "number", []),
     getLegalMovesCsv: module.cwrap<[], string>("get_legal_moves", "string", []),
+    searchSetThreads: module.cwrap<[number], null>("search_set_threads", null, ["number"]),
+    resetGame: module.cwrap<[], null>("reset_game", null, []),
   };
 }
 
@@ -106,6 +110,8 @@ async function ensureInitialized(): Promise<EngineBindings> {
       if (status !== 0) {
         throw new Error(`init_engine failed with status ${status}`);
       }
+      const threads = Math.min(navigator.hardwareConcurrency ?? 1, 4);
+      bindings.searchSetThreads(threads);
       isReady = true;
     })().catch((error: unknown) => {
       isReady = false;
@@ -163,6 +169,13 @@ const engineService: EngineService = {
     return queueOperation(async () => {
       const bindings = await ensureInitialized();
       return parseLegalMoves(bindings.getLegalMovesCsv());
+    });
+  },
+
+  async resetGame() {
+    return queueOperation(async () => {
+      const bindings = await ensureInitialized();
+      bindings.resetGame();
     });
   },
 };

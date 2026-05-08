@@ -45,6 +45,7 @@ export default function Home() {
     evaluatePosition,
     isReady,
     isThinking,
+    newGame,
     resetEngine,
     searchBestMove,
   } = useChessEngine();
@@ -262,12 +263,13 @@ export default function Home() {
 
   const handleNewGame = useCallback(() => {
     cancelPendingEngineWork();
+    void newGame();
     setBaseFen(STARTING_POSITION_FEN);
     setFenDraft(STARTING_POSITION_FEN);
     setEvaluation(0);
     setPositionError(null);
     setPlayedMoves([]);
-  }, [cancelPendingEngineWork]);
+  }, [cancelPendingEngineWork, newGame]);
 
   const handleUndo = useCallback(() => {
     if (undoPlyCount === 0) {

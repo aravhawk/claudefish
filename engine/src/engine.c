@@ -114,6 +114,7 @@ int init_engine(void) {
     movegen_init();
     eval_init();
     nnue_init();
+    nnue_load_embedded();
     policy_init();
     search_init();
     book_init();
@@ -129,6 +130,14 @@ int init_engine(void) {
     engine_set_empty_string(engine_legal_moves_buffer, sizeof(engine_legal_moves_buffer));
     engine_ready = true;
     return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE void reset_game(void) {
+    search_reset_persistent_state();
+    if (!position_from_fen(&engine_position, engine_start_fen)) {
+        return;
+    }
+    engine_reset_history(&engine_position);
 }
 
 int set_position(const char *fen) {

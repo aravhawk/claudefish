@@ -8,6 +8,7 @@ export interface ChessEngineAPI {
 
 export interface EngineService extends ChessEngineAPI {
   isReady(): Promise<boolean>;
+  resetGame(): Promise<void>;
 }
 
 export interface EngineSearchResult {
@@ -23,4 +24,5 @@ export interface UseChessEngineResult {
   searchBestMove(fen: string, depth: number, timeMs: number): Promise<string>;
   evaluatePosition(fen: string): Promise<number>;
   resetEngine(): Promise<void>;
+  newGame(): Promise<void>;
 }

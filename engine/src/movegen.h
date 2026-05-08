@@ -77,7 +77,9 @@ bool movegen_unmake_move(Position *pos);
 bool movegen_unmake_null_move(Position *pos);
 void movegen_generate_pseudo_legal(const Position *pos, MoveList *list);
 void movegen_generate_legal(Position *pos, MoveList *list);
+void movegen_generate_captures(Position *pos, MoveList *list);
 bool movegen_has_legal_moves(Position *pos);
+bool movegen_has_any_legal_move(Position *pos);
 bool movegen_is_checkmate(Position *pos);
 bool movegen_is_stalemate(Position *pos);
 

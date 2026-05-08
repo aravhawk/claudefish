@@ -1,12 +1,10 @@
 #include "search.h"
 
 #include <math.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifndef __EMSCRIPTEN__
-#include <pthread.h>
-#endif
 
 #include "correction.h"
 #include "draw.h"
@@ -198,6 +196,36 @@ static SearchOptions search_options = {
 static int search_num_threads = 1;
 static int search_lmr_table[SEARCH_MAX_DEPTH + 1][MOVEGEN_MAX_MOVES + 1];
 static bool search_initialized = false;
+
+/* Persistent heuristics: survive across moves within a game */
+static int  persist_history[2][BOARD_SQUARES][BOARD_SQUARES];
+static Move persist_killers[SEARCH_MAX_PLY][2];
+static Move persist_countermoves[BOARD_SQUARES][BOARD_SQUARES];
+
+static void search_persist_load(SearchContext *ctx) {
+    int c, s, t;
+    /* Age history before copying into new search context (prevents saturation) */
+    for (c = 0; c < 2; ++c)
+        for (s = 0; s < BOARD_SQUARES; ++s)
+            for (t = 0; t < BOARD_SQUARES; ++t)
+                persist_history[c][s][t] /= 2;
+
+    memcpy(ctx->history, persist_history, sizeof(ctx->history));
+    memcpy(ctx->killers, persist_killers, sizeof(ctx->killers));
+    memcpy(ctx->countermoves, persist_countermoves, sizeof(ctx->countermoves));
+}
+
+static void search_persist_save(const SearchContext *ctx) {
+    memcpy(persist_history, ctx->history, sizeof(persist_history));
+    memcpy(persist_killers, ctx->killers, sizeof(persist_killers));
+    memcpy(persist_countermoves, ctx->countermoves, sizeof(persist_countermoves));
+}
+
+void search_reset_persistent_state(void) {
+    memset(persist_history, 0, sizeof(persist_history));
+    memset(persist_killers, 0, sizeof(persist_killers));
+    memset(persist_countermoves, 0, sizeof(persist_countermoves));
+}
 enum {
     SEARCH_STALEMATE_MARGIN = 500,
     SEARCH_STALEMATE_BIAS = 800
@@ -747,23 +775,14 @@ static int search_quiescence(Position *pos, SearchContext *ctx, int alpha, int b
         best_score = -SEARCH_INF;
     }
 
-    movegen_generate_legal(pos, &legal_moves);
-    if (legal_moves.count == 0) {
-        return in_check ? (-SEARCH_MATE_SCORE + ply) : 0;
-    }
-
-    candidate_moves.count = 0;
     if (in_check) {
+        movegen_generate_legal(pos, &legal_moves);
+        if (legal_moves.count == 0) {
+            return -SEARCH_MATE_SCORE + ply;
+        }
         candidate_moves = legal_moves;
     } else {
-        for (index = 0; index < legal_moves.count; ++index) {
-            Move move = legal_moves.moves[index];
-
-            if (movorder_is_capture(move)) {
-                candidate_moves.moves[candidate_moves.count++] = move;
-            }
-        }
-
+        movegen_generate_captures(pos, &candidate_moves);
         if (candidate_moves.count == 0) {
             return best_score;
         }
@@ -1062,7 +1081,7 @@ static int search_negamax(
     /* ---- Enhanced Transposition Cutoff (ETC) ----
        Before scoring moves, check if killer/countermove squares have TT entries
        with sufficient depth causing an immediate cutoff. */
-    if (0 && !pv_node && depth >= 4 && !in_check) {
+    if (!pv_node && depth >= 4 && !in_check) {
         Move etc_moves[2];
         int etc_count = 0;
 
@@ -1314,7 +1333,10 @@ static int search_negamax(
 
         gives_check = movegen_is_in_check(pos, (Color) pos->side_to_move);
 
-        if (movegen_is_stalemate(pos)) {
+        /* Stalemate detection: only probe when child is not in check (fast-path).
+           Use movegen_has_any_legal_move which exits after the first legal move found,
+           making this O(1) amortized for non-stalemate positions. */
+        if (!gives_check && !movegen_has_any_legal_move(pos)) {
             score = 0;
             if (static_eval >= SEARCH_STALEMATE_MARGIN) {
                 score = -SEARCH_STALEMATE_BIAS;
@@ -1561,7 +1583,7 @@ typedef struct SearchThreadData {
     bool is_main;
 } SearchThreadData;
 
-static volatile bool smp_stop_flag = false;
+static _Atomic bool smp_stop_flag = false;
 
 static void *search_thread_worker(void *arg) {
     SearchThreadData *data = (SearchThreadData *) arg;
@@ -1624,29 +1646,31 @@ static void *search_thread_worker(void *arg) {
         }
 
         if (search_options.enable_aspiration_windows && have_previous_score && depth >= 4) {
-            const int aspiration_margins[] = { 50, 200 };
-            bool resolved = false;
-            size_t margin_index;
-
+            int delta = 25;
+            int asp_alpha = previous_score - delta;
+            int asp_beta  = previous_score + delta;
             score = previous_score;
-            for (margin_index = 0; margin_index < sizeof(aspiration_margins) / sizeof(aspiration_margins[0]); ++margin_index) {
-                int alpha = previous_score - aspiration_margins[margin_index];
-                int beta = previous_score + aspiration_margins[margin_index];
 
-                score = search_negamax(&data->pos, &data->ctx, depth, alpha, beta, 0, true, -SEARCH_INF);
+            for (;;) {
+                score = search_negamax(&data->pos, &data->ctx, depth, asp_alpha, asp_beta, 0, true, -SEARCH_INF);
                 if (data->ctx.stop || smp_stop_flag) {
                     data->ctx.stop = true;
                     break;
                 }
 
-                if (score > alpha && score < beta) {
-                    resolved = true;
+                if (score <= asp_alpha) {
+                    asp_alpha = (asp_alpha - delta < -SEARCH_INF) ? -SEARCH_INF : asp_alpha - delta;
+                    delta *= 2;
+                } else if (score >= asp_beta) {
+                    asp_beta = (asp_beta + delta > SEARCH_INF) ? SEARCH_INF : asp_beta + delta;
+                    delta *= 2;
+                } else {
                     break;
                 }
-            }
 
-            if (!data->ctx.stop && !smp_stop_flag && !resolved) {
-                score = search_negamax(&data->pos, &data->ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true, -SEARCH_INF);
+                if (asp_alpha <= -SEARCH_INF && asp_beta >= SEARCH_INF) {
+                    break;
+                }
             }
         } else {
             score = search_negamax(&data->pos, &data->ctx, depth, -SEARCH_INF, SEARCH_INF, 0, true, -SEARCH_INF);
@@ -1721,9 +1745,7 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
         if (out_result != NULL) memset(out_result, 0, sizeof(*out_result));
         return false;
     }
-#ifndef __EMSCRIPTEN__
     pthread_t thread_handles[SEARCH_MAX_THREADS];
-#endif
     int num_threads;
     int i;
     SearchResult best_result;
@@ -1757,11 +1779,9 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
         memset(&threads[i].result, 0, sizeof(threads[i].result));
     }
 
-#ifdef __EMSCRIPTEN__
-    /* WASM: single-threaded fallback */
-    search_thread_worker(&threads[0]);
-#else
-    /* Native: use pthreads for Lazy SMP */
+    /* Load persistent heuristics into main thread (thread 0) only */
+    search_persist_load(&threads[0].ctx);
+
     if (num_threads == 1) {
         search_thread_worker(&threads[0]);
     } else {
@@ -1781,7 +1801,6 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
             pthread_join(thread_handles[i], NULL);
         }
     }
-#endif
 
     /* Collect the best result from all threads.
        Prefer the deepest completed depth, then best score. */
@@ -1805,6 +1824,9 @@ bool search_iterative_deepening(Position *pos, int max_depth, int time_limit_ms,
         best_result.nodes = total_nodes;
         best_result.qnodes = total_qnodes;
     }
+
+    /* Save persistent heuristics from main thread before cleanup */
+    search_persist_save(&threads[0].ctx);
 
     /* Cleanup per-thread search contexts */
     for (i = 0; i < num_threads; ++i) {

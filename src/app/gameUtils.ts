@@ -5,8 +5,8 @@ import type { PieceCode } from "@/components/Board/boardUtils";
 export const SEARCH_MATE_SCORE = 30000;
 const MATE_DISPLAY_THRESHOLD = 29900;
 
-/* ELO-based difficulty system. The slider ranges from 800 to 3200 ELO.
-   ELO maps to search depth and time via interpolation. */
+/* Strength slider. The slider ranges from 0 to 100 (mapped from ELO_MIN..ELO_MAX internally).
+   Strength maps to search depth and time via interpolation. */
 
 export const ELO_MIN = 800;
 export const ELO_MAX = 3200;
@@ -23,56 +23,23 @@ export function getEloConfig(elo: number): EloDifficultyConfig {
   const clamped = Math.max(ELO_MIN, Math.min(ELO_MAX, elo));
   const t = (clamped - ELO_MIN) / (ELO_MAX - ELO_MIN); /* 0..1 */
 
-  /* Depth: 1 at 800 ELO -> 16 at 3200 ELO */
+  /* Depth: 1 at minimum -> 20 at maximum strength */
   const depth = Math.round(1 + t * t * 15 + t * 4);
 
-  /* Time: 50ms at 800 ELO -> 8000ms at 3200 ELO */
+  /* Time: 50ms at minimum -> 8000ms at maximum strength */
   const timeMs = Math.round(50 + t * t * 7950);
 
-  /* Label: rounded ELO with descriptive tier */
+  /* Label: qualitative tier only — no specific ELO numbers */
   let label: string;
-  if (clamped < 1000) label = `ELO ${clamped} · Beginner`;
-  else if (clamped < 1400) label = `ELO ${clamped} · Casual`;
-  else if (clamped < 1800) label = `ELO ${clamped} · Club`;
-  else if (clamped < 2200) label = `ELO ${clamped} · Expert`;
-  else if (clamped < 2600) label = `ELO ${clamped} · Master`;
-  else label = `ELO ${clamped} · Grandmaster`;
+  if (clamped < 1000) label = "Beginner";
+  else if (clamped < 1400) label = "Casual";
+  else if (clamped < 1800) label = "Club";
+  else if (clamped < 2200) label = "Expert";
+  else if (clamped < 2600) label = "Master";
+  else label = "Full Strength";
 
   return { elo: clamped, depth, timeMs, label };
 }
-
-export const DIFFICULTY_LEVELS = [
-  {
-    key: "easy",
-    label: "Easy",
-    depth: 2,
-    timeMs: 200,
-    summary: "Fast replies and lighter calculation.",
-  },
-  {
-    key: "medium",
-    label: "Medium",
-    depth: 4,
-    timeMs: 1000,
-    summary: "Balanced strength with quick responses.",
-  },
-  {
-    key: "hard",
-    label: "Hard",
-    depth: 6,
-    timeMs: 3000,
-    summary: "Deeper search for stronger practical play.",
-  },
-  {
-    key: "maximum",
-    label: "Maximum",
-    depth: 12,
-    timeMs: 5000,
-    summary: "Longest think time and strongest search.",
-  },
-] as const;
-
-export type DifficultyKey = (typeof DIFFICULTY_LEVELS)[number]["key"];
 
 export interface ParsedUciMove {
   from: Square;
@@ -98,12 +65,6 @@ export interface CapturedPiecesByColor {
 }
 
 export const STARTING_POSITION_FEN = new Chess().fen();
-
-export function getDifficultyConfig(level: DifficultyKey) {
-  return (
-    DIFFICULTY_LEVELS.find((option) => option.key === level) ?? DIFFICULTY_LEVELS[1]
-  );
-}
 
 export function parseUciMove(move: string): ParsedUciMove | null {
   if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(move)) {

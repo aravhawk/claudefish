@@ -51,9 +51,11 @@ static inline int nnue_halfkp_feature_index(
         p_color = p_color == WHITE ? BLACK : WHITE;
     }
 
-    /* Index: king_bucket * 641 + (piece_color * 6 + piece_type) * 64 + piece_square */
+    /* Stockfish HalfKP "Friend" PS_* offsets (1-based, interleaved by color):
+       ps_offset = 1 + piece_type * 128 + piece_color * 64
+       This matches SF's PS_W_PAWN=1, PS_B_PAWN=65, PS_W_KNIGHT=129, ... exactly. */
     return king_square * NNUE_HALFKP_DIM_PER_KING +
-           (p_color * PIECE_TYPE_NB + p_type) * BOARD_SQUARES +
+           1 + p_type * 128 + p_color * 64 +
            piece_square;
 }
 
@@ -376,21 +378,11 @@ static void nnue_generate_zero_weights(NNUEWeights *w) {
 
 bool nnue_load_embedded(void) {
     nnue_init();
-
-    /* For now, we don't load a placeholder zero-weight network.
-       A real pre-trained NNUE network will be loaded when available.
-       This means nnue_is_loaded() returns false and the search
-       uses classical evaluation as fallback. */
-    return false;
+    /* Load from the embedded VFS path (same pattern as opening book). */
+    return nnue_load_from_file("/net.nnue");
 }
 
 bool nnue_load_from_file(const char *path) {
-    /* File loading not needed for WASM build.
-       Native builds can load .nnue files from disk. */
-#ifdef __EMSCRIPTEN__
-    (void) path;
-    return false;
-#else
     FILE *f;
     uint8_t *data;
     size_t file_size;
@@ -421,7 +413,6 @@ bool nnue_load_from_file(const char *path) {
     result = nnue_load_from_data(data, file_size);
     free(data);
     return result;
-#endif
 }
 
 bool nnue_is_loaded(void) {

@@ -7,30 +7,23 @@
 #include "types.h"
 #include "position.h"
 
-/* NNUE architecture: HalfKP feature set
+/* NNUE architecture: HalfKP feature set (Stockfish SF12-SF16 era, "Friend" variant)
    Feature transformer: 41024 -> 256 (per perspective, 2 accumulators)
    Hidden layers: 512 -> 32 -> 32 -> 1
    All integer quantized: int16 accumulator, int8 hidden layers */
 
 enum {
-    /* HalfKP: (king_square * 10 + piece_type_on_square) mapping
-       64 squares for king * 641 features per king square = 41024 total features
-       Each non-king piece on the board activates one feature:
-         feature_index = king_square * 641 + (piece_color * 6 + piece_type) * 64 + piece_square */
+    /* HalfKP: 64 king squares * 641 features per king = 41024 total features.
+       Index 0 is unused. Each non-king piece activates one feature per perspective:
+         ps_offset = 1 + piece_type * 128 + piece_color * 64
+         feature_index = king_sq * 641 + ps_offset + piece_sq
+       Piece type: PAWN=0, KNIGHT=1, BISHOP=2, ROOK=3, QUEEN=4 (KING excluded).
+       This matches Stockfish's PS_W_PAWN/PS_B_PAWN/... layout exactly. */
     NNUE_HALFKP_DIM_PER_KING = 641,
     NNUE_HALFKP_INPUT_DIM = 64 * NNUE_HALFKP_DIM_PER_KING, /* = 41024 */
 
-    /* ---- Threat Input Features (Stockfish 18 SFNNv10 inspired) ----
-       For each non-king piece, we add a feature if it's attacked by an enemy
-       piece and another if it's attacked by an enemy pawn.
-       64 squares × 2 threat types × 2 colors = 256 extra features per king square.
-       New DIM_PER_KING = 641 + 256 = 897, total = 64 * 897 = 57408 */
-    NNUE_THREAT_INPUT_DIM = 256, /* 64 squares × 2 types × 2 colors */
-    NNUE_HALFKP_THREAT_DIM_PER_KING = NNUE_HALFKP_DIM_PER_KING + NNUE_THREAT_INPUT_DIM,
-    NNUE_TOTAL_INPUT_DIM = 64 * NNUE_HALFKP_THREAT_DIM_PER_KING, /* = 57408 */
-
-    /* Keep the old constant for backward compatibility with weight loading */
-    NNUE_INPUT_DIM = NNUE_TOTAL_INPUT_DIM,
+    /* Keep for any code that references NNUE_INPUT_DIM */
+    NNUE_INPUT_DIM = NNUE_HALFKP_INPUT_DIM,
 
     /* Network dimensions */
     NNUE_ACCUMULATOR_DIM = 256,

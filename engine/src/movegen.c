@@ -1116,15 +1116,58 @@ void movegen_generate_legal(Position *pos, MoveList *list) {
     }
 }
 
-bool movegen_has_legal_moves(Position *pos) {
-    MoveList list;
+void movegen_generate_captures(Position *pos, MoveList *list) {
+    MoveList pseudo_legal;
+    Color side_to_move;
+    size_t index;
 
-    if (pos == NULL) {
-        return false;
+    if (list == NULL) return;
+    list->count = 0;
+    if (pos == NULL) return;
+
+    side_to_move = (Color) pos->side_to_move;
+    movegen_generate_pseudo_legal(pos, &pseudo_legal);
+
+    for (index = 0; index < pseudo_legal.count; ++index) {
+        Move move = pseudo_legal.moves[index];
+
+        /* Include only captures (and en passant) */
+        uint8_t flags = move_flags(move);
+        if (move_captured_piece(move) == NO_PIECE &&
+            !(flags & MOVE_FLAG_EN_PASSANT)) {
+            continue;
+        }
+
+        if (!movegen_make_move(pos, move)) continue;
+        if (!movegen_is_in_check(pos, side_to_move)) {
+            move_list_push(list, move);
+        }
+        movegen_unmake_move(pos);
     }
+}
 
-    movegen_generate_legal(pos, &list);
-    return list.count > 0;
+bool movegen_has_any_legal_move(Position *pos) {
+    MoveList pseudo_legal;
+    Color side_to_move;
+    size_t index;
+
+    if (pos == NULL) return false;
+
+    side_to_move = (Color) pos->side_to_move;
+    movegen_generate_pseudo_legal(pos, &pseudo_legal);
+
+    for (index = 0; index < pseudo_legal.count; ++index) {
+        if (!movegen_make_move(pos, pseudo_legal.moves[index])) continue;
+        bool legal = !movegen_is_in_check(pos, side_to_move);
+        movegen_unmake_move(pos);
+        if (legal) return true;
+    }
+    return false;
+}
+
+bool movegen_has_legal_moves(Position *pos) {
+    if (pos == NULL) return false;
+    return movegen_has_any_legal_move(pos);
 }
 
 bool movegen_is_checkmate(Position *pos) {

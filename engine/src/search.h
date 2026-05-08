@@ -55,6 +55,7 @@ typedef struct SearchOptions {
 
 void search_init(void);
 void search_reset_heuristics(void);
+void search_reset_persistent_state(void);
 SearchOptions search_get_options(void);
 void search_set_options(const SearchOptions *options);
 void search_reset_options(void);

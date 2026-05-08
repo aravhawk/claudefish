@@ -12,5 +12,6 @@ EMSCRIPTEN_KEEPALIVE int set_position(const char *fen);
 EMSCRIPTEN_KEEPALIVE const char *search_best_move(int depth, int time_ms);
 EMSCRIPTEN_KEEPALIVE int evaluate_position(void);
 EMSCRIPTEN_KEEPALIVE const char *get_legal_moves(void);
+EMSCRIPTEN_KEEPALIVE void reset_game(void);
 
 #endif

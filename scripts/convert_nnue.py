@@ -1,140 +1,188 @@
 #!/usr/bin/env python3
-"""Convert Stockfish NNUE weights for Claudefish engine.
+"""
+Convert a Stockfish HalfKP .nnue file to Claudefish format.
 
-This script reads a Stockfish .nnue file and converts the weights
-to match Claudefish's NNUE architecture (HalfKP+Threat -> 256 -> 32 -> 32 -> 1).
+Stockfish HalfKP format (SF12-SF16, halfkp_256x2-32-32):
+  Header:
+    uint32: version
+    uint32: global_hash
+    uint32: description_length
+    char[description_length]: description string (not null-terminated)
+  Feature Transformer Section:
+    uint32: ft_section_hash
+    int16[ACCUMULATOR_DIM]: ft_biases (256 values)
+    int16[INPUT_DIM * ACCUMULATOR_DIM]: ft_weights (40960 * 256 values, row-major)
+  Network Section:
+    uint32: net_section_hash
+    int32[H1]: h1_biases (32)
+    int8[2*ACCUMULATOR_DIM * H1]: h1_weights (512 * 32)
+    int32[H2]: h2_biases (32)
+    int8[H1 * H2]: h2_weights (32 * 32)
+    int32: out_bias (1)
+    int8[H2]: out_weights (32)
+
+Claudefish binary format:
+  Header:
+    uint32: magic (0x4E4E5545 = "NNUE")
+    uint32: version (7)
+    char[256]: description (null-padded, fixed 256 bytes)
+  Data (biases BEFORE weights for each layer):
+    int16[256]: ft_biases
+    int16[40960 * 256]: ft_weights
+    int32[32]: h1_biases
+    int8[512 * 32]: h1_weights
+    int32[32]: h2_biases
+    int8[32 * 32 + 32]: h2_weights + out_weights (contiguous in one buffer)
+    int32: out_bias
 
 Usage:
-    python3 convert_nnue.py <input.nnue> [output.bin]
-
-The output file can be loaded by nnue_load_from_file() in the engine.
+  python3 scripts/convert_nnue.py <stockfish_net.nnue> engine/net.nnue
 """
 
 import struct
 import sys
-import numpy as np
+import os
 
-# Architecture dimensions (must match nnue.h)
-HALFKP_INPUT_DIM = 41024
-THREAT_INPUT_DIM = 256
-TOTAL_INPUT_DIM = 41024 + 256  # 57408 with threat features (use 41024 for old nets)
+CLAUDEFISH_MAGIC = 0x4E4E5545  # "NNUE"
+CLAUDEFISH_VERSION = 7
+
+INPUT_DIM = 41024         # 64 king squares * 641 features/king (Stockfish HalfKP "Friend" layout)
 ACCUMULATOR_DIM = 256
 HIDDEN1_DIM = 32
 HIDDEN2_DIM = 32
-OUTPUT_DIM = 1
 
-# Claudefish net format
-MAGIC = 0x4E4E5545  # "NNUE"
-VERSION = 7
+FT_BIAS_BYTES   = ACCUMULATOR_DIM * 2              # int16
+FT_WEIGHT_BYTES = INPUT_DIM * ACCUMULATOR_DIM * 2  # int16
+H1_BIAS_BYTES   = HIDDEN1_DIM * 4                  # int32
+H1_WEIGHT_BYTES = ACCUMULATOR_DIM * 2 * HIDDEN1_DIM # int8: 512 * 32
+H2_BIAS_BYTES   = HIDDEN2_DIM * 4                  # int32
+H2_WEIGHT_BYTES = HIDDEN1_DIM * HIDDEN2_DIM        # int8: 32 * 32
+OUT_WEIGHT_BYTES = HIDDEN2_DIM                     # int8: 32
+OUT_BIAS_BYTES  = 4                                # int32
+
 
 def read_sf_nnue(path):
-    """Read a Stockfish .nnue file and extract weights."""
     with open(path, 'rb') as f:
         data = f.read()
 
-    # Stockfish .nnue format: header then network data
-    # Header: magic (4 bytes), version (4 bytes), desc hash (4 bytes), size (4 bytes)
-    if len(data) < 16:
-        print(f"File too small: {len(data)} bytes")
-        return None
+    total = len(data)
+    offset = 0
 
-    magic = struct.unpack('<I', data[0:4])[0]
-    version = struct.unpack('<I', data[4:8])[0]
-    print(f"Stockfish NNUE: magic=0x{magic:08X}, version={version}")
+    def read_u32():
+        nonlocal offset
+        v = struct.unpack_from('<I', data, offset)[0]
+        offset += 4
+        return v
 
-    # Skip header (varies by version, typically 64 bytes)
-    offset = 64
+    def read_raw(n):
+        nonlocal offset
+        if offset + n > len(data):
+            raise ValueError(f"Tried to read {n} bytes at offset {offset} but only {len(data)-offset} remain")
+        v = data[offset:offset + n]
+        offset += n
+        return v
 
-    # Feature transformer weights and biases
-    # SF uses HalfKP 41024 -> 256 architecture (per perspective)
-    ft_weight_size = 41024 * 256 * 2  # int16, two perspectives
-    ft_bias_size = 256 * 2  # int16, two perspectives
+    # Global header
+    version   = read_u32()
+    glob_hash = read_u32()
+    desc_size = read_u32()
+    desc_bytes = read_raw(desc_size)
+    desc = desc_bytes.decode('utf-8', errors='replace')
 
-    print(f"Attempting to read feature transformer at offset {offset}")
-    print(f"Expected FT weight bytes: {ft_weight_size}")
+    print(f"SF version      : 0x{version:08X}")
+    print(f"Global hash     : 0x{glob_hash:08X}")
+    print(f"Description     : {desc[:120]}")
+    print(f"Header ends at  : {offset} / {total}")
 
-    # For now, just report what we find
-    remaining = len(data) - offset
-    print(f"Remaining data after header: {remaining} bytes")
+    # Feature transformer section
+    ft_hash    = read_u32()
+    print(f"FT section hash : 0x{ft_hash:08X}")
+    ft_biases  = read_raw(FT_BIAS_BYTES)
+    ft_weights = read_raw(FT_WEIGHT_BYTES)
+    print(f"FT data ends at : {offset} / {total}")
+
+    # Network section
+    net_hash    = read_u32()
+    print(f"Net section hash: 0x{net_hash:08X}")
+    h1_biases   = read_raw(H1_BIAS_BYTES)
+    h1_weights  = read_raw(H1_WEIGHT_BYTES)
+    h2_biases   = read_raw(H2_BIAS_BYTES)
+    h2_weights  = read_raw(H2_WEIGHT_BYTES)
+    out_bias    = read_raw(OUT_BIAS_BYTES)
+    out_weights = read_raw(OUT_WEIGHT_BYTES)
+
+    print(f"All data ends at: {offset} / {total}")
+    if offset != total:
+        leftover = total - offset
+        print(f"WARNING: {leftover} bytes unread — possible format variant or trailing padding")
 
     return {
-        'data': data,
-        'offset': offset,
-        'version': version
+        'description': desc,
+        'ft_biases':   ft_biases,
+        'ft_weights':  ft_weights,
+        'h1_biases':   h1_biases,
+        'h1_weights':  h1_weights,
+        'h2_biases':   h2_biases,
+        'h2_weights':  h2_weights,
+        'out_bias':    out_bias,
+        'out_weights': out_weights,
     }
 
 
-def write_claudefish_nnue(weights, output_path):
-    """Write weights in Claudefish's binary format."""
-    # For now, create a placeholder that documents the format
-    print(f"Writing Claudefish NNUE to {output_path}")
+def write_claudefish_nnue(path, w):
+    orig = w['description']
+    desc_str = f"HalfKP[41024]->256x2->32->32->1 from SF: {orig}"
+    desc_enc = desc_str[:255].encode('utf-8')
+    desc_padded = desc_enc + b'\x00' * (256 - len(desc_enc))
 
-    # Format:
-    # Header: magic(4) + version(4) + input_dim(4) + acc_dim(4) + h1_dim(4) + h2_dim(4) + desc_len(4) + desc(desc_len)
-    # FT weights: input_dim * acc_dim * sizeof(int16)  [row-major]
-    # FT biases:  acc_dim * sizeof(int16)
-    # H1 weights: acc_dim*2 * h1_dim * sizeof(int8)
-    # H1 biases:  h1_dim * sizeof(int32)
-    # H2 weights: h1_dim * h2_dim * sizeof(int8)
-    # H2 biases:  h2_dim * sizeof(int32)
-    # Out weights: h2_dim * sizeof(int8)
-    # Out bias: sizeof(int32)
+    expected = (8 + 256 +
+                FT_BIAS_BYTES + FT_WEIGHT_BYTES +
+                H1_BIAS_BYTES + H1_WEIGHT_BYTES +
+                H2_BIAS_BYTES +
+                H2_WEIGHT_BYTES + OUT_WEIGHT_BYTES +  # contiguous block
+                OUT_BIAS_BYTES)
 
-    desc = b"Claudefish NNUE (placeholder - no real weights)"
-    desc_len = len(desc)
+    with open(path, 'wb') as f:
+        f.write(struct.pack('<II', CLAUDEFISH_MAGIC, CLAUDEFISH_VERSION))
+        f.write(desc_padded)           # 256 bytes fixed description
+        f.write(w['ft_biases'])        # int16[256]
+        f.write(w['ft_weights'])       # int16[40960*256]
+        f.write(w['h1_biases'])        # int32[32]
+        f.write(w['h1_weights'])       # int8[512*32]
+        f.write(w['h2_biases'])        # int32[32]
+        f.write(w['h2_weights'])       # int8[32*32]  \  contiguous buffer in Claudefish format
+        f.write(w['out_weights'])      # int8[32]     /
+        f.write(w['out_bias'])         # int32
 
-    header = struct.pack('<IIIIIII',
-        MAGIC, VERSION,
-        TOTAL_INPUT_DIM, ACCUMULATOR_DIM, HIDDEN1_DIM, HIDDEN2_DIM,
-        desc_len)
-
-    # Placeholder: zero weights (engine will fall back to classical eval)
-    ft_weights = b'\x00' * (TOTAL_INPUT_DIM * ACCUMULATOR_DIM * 2)
-    ft_biases = b'\x00' * (ACCUMULATOR_DIM * 2)
-    h1_weights = b'\x00' * (ACCUMULATOR_DIM * 2 * HIDDEN1_DIM)
-    h1_biases = b'\x00' * (HIDDEN1_DIM * 4)
-    h2_weights = b'\x00' * (HIDDEN1_DIM * HIDDEN2_DIM)
-    h2_biases = b'\x00' * (HIDDEN2_DIM * 4)
-    out_weights = b'\x00' * HIDDEN2_DIM
-    out_bias = b'\x00' * 4
-
-    with open(output_path, 'wb') as f:
-        f.write(header)
-        f.write(desc)
-        f.write(ft_weights)
-        f.write(ft_biases)
-        f.write(h1_weights)
-        f.write(h1_biases)
-        f.write(h2_weights)
-        f.write(h2_biases)
-        f.write(out_weights)
-        f.write(out_bias)
-
-    total_size = len(header) + desc_len + len(ft_weights) + len(ft_biases) + \
-                 len(h1_weights) + len(h1_biases) + len(h2_weights) + len(h2_biases) + \
-                 len(out_weights) + len(out_bias)
-
-    print(f"Written {total_size} bytes to {output_path}")
-    print("NOTE: This is a placeholder with zero weights. The engine will use classical eval.")
+    actual = os.path.getsize(path)
+    print(f"Wrote {path}: {actual} bytes (expected {expected})")
+    if actual != expected:
+        print(f"ERROR: size mismatch ({actual} vs {expected}) — check network architecture")
+        sys.exit(1)
+    print("OK: size matches Claudefish HalfKP[40960]->256x2->32->32->1 format")
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <input.nnue> [output.bin]")
-        print("  Reads a Stockfish .nnue file and converts to Claudefish format.")
-        print("  If no output path, writes to claudefish_nnue.bin")
+    if len(sys.argv) < 3:
+        print(__doc__)
+        print(f"Usage: {sys.argv[0]} <stockfish_net.nnue> <output_net.nnue>")
         sys.exit(1)
 
-    input_path = sys.argv[1]
-    output_path = sys.argv[2] if len(sys.argv) > 2 else "claudefish_nnue.bin"
+    inp  = sys.argv[1]
+    outp = sys.argv[2]
 
-    sf_data = read_sf_nnue(input_path)
-    if sf_data is None:
-        print("Failed to read Stockfish NNUE file")
+    if not os.path.exists(inp):
+        print(f"ERROR: input file not found: {inp}")
         sys.exit(1)
 
-    write_claudefish_nnue(sf_data, output_path)
-    print("Done. Load the output file in the engine via nnue_load_from_file().")
+    print(f"\nReading  : {inp} ({os.path.getsize(inp):,} bytes)")
+    weights = read_sf_nnue(inp)
+
+    print(f"\nWriting  : {outp}")
+    write_claudefish_nnue(outp, weights)
+
+    print("\nConversion complete. Embed in WASM build via:")
+    print(f"  --embed-file {outp}@/net.nnue")
 
 
 if __name__ == '__main__':

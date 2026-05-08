@@ -174,6 +174,12 @@ export function useChessEngine(): UseChessEngineResult {
     await initializeWorker();
   }, [disposeCurrentWorker, initializeWorker]);
 
+  const newGame = useCallback<UseChessEngineResult["newGame"]>(async () => {
+    if (engineRef.current !== null && isReady) {
+      await engineRef.current.resetGame();
+    }
+  }, [isReady]);
+
   return {
     isReady,
     isThinking,
@@ -181,5 +187,6 @@ export function useChessEngine(): UseChessEngineResult {
     searchBestMove,
     evaluatePosition,
     resetEngine,
+    newGame,
   };
 }
