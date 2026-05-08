@@ -17,6 +17,7 @@ interface EmscriptenModule {
 
 interface CreateChessEngineOptions {
   locateFile(path: string, prefix: string): string;
+  mainScriptUrlOrBlob?: string;
 }
 
 type CreateChessEngineModule = (
@@ -66,6 +67,10 @@ async function loadModule(): Promise<EmscriptenModule> {
     locateFile(path) {
       return `/engine/${path}`;
     },
+    // Emscripten uses document.currentScript.src to locate the worker script for
+    // pthreads, but document is undefined inside a Web Worker. Supplying the URL
+    // explicitly prevents new Worker(undefined) and the resulting hang.
+    mainScriptUrlOrBlob: "/engine/engine.js",
   });
 }
 
