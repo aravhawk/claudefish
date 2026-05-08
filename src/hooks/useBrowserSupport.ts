@@ -113,9 +113,8 @@ export function useBrowserSupport(): BrowserSupportResult {
     return () => cancelAnimationFrame(id);
   }, [runCheck]);
 
-  const isMobile = /android|iphone|ipad|ipod|blackberry|mobile/i.test(
-    navigator.userAgent ?? "",
-  );
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+  const isMobile = /android|iphone|ipad|ipod|blackberry|mobile/i.test(ua);
 
   return {
     checking: state.status === "checking",
@@ -123,13 +122,13 @@ export function useBrowserSupport(): BrowserSupportResult {
     reason: state.status === "unsupported" ? state.reason : undefined,
     detected: {
       isMobile,
-      browser: detectBrowser(navigator.userAgent),
+      browser: detectBrowser(ua),
       hasWasm: typeof WebAssembly !== "undefined",
       hasSimd: typeof WebAssembly !== "undefined"
         ? "SIMD" in WebAssembly
         : false,
       hasSharedArrayBuffer: typeof SharedArrayBuffer !== "undefined",
-      hasCoopCoep: crossOriginIsolated,
+      hasCoopCoep: typeof crossOriginIsolated !== "undefined" ? crossOriginIsolated : false,
     },
   };
 }
