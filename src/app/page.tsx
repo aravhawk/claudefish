@@ -4,6 +4,7 @@ import { Chess, type Move, type PieceSymbol, type Square } from "chess.js";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import Board from "@/components/Board/Board";
+import BrowserSupportGate from "@/components/BrowserSupportGate/BrowserSupportGate";
 import { getPieceGlyph, getPieceName } from "@/components/Board/boardUtils";
 import GameOverOverlay from "@/components/GameOverOverlay/GameOverOverlay";
 import MoveHistory from "@/components/MoveHistory/MoveHistory";
@@ -308,8 +309,9 @@ export default function Home() {
   }, [cancelPendingEngineWork, fenDraft]);
 
   return (
-    <main className={styles.page} data-theme={theme.key} style={themeStyle}>
-      <div aria-hidden="true" className={styles.backdrop} />
+    <BrowserSupportGate>
+      <main className={styles.page} data-theme={theme.key} style={themeStyle}>
+        <div aria-hidden="true" className={styles.backdrop} />
 
       {showLoadingScreen ? (
         <div
@@ -567,6 +569,7 @@ export default function Home() {
         </div>
       ) : null}
     </main>
+    </BrowserSupportGate>
   );
 }
 

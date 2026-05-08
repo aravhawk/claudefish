@@ -1,5 +1,0 @@
-# Engine book + API notes
-
-- `engine/src/book.c` loads `engine/book/rodent.bin` on native builds and falls back to the tiny embedded Polyglot blob in `engine/src/book_embedded.h` if the file is unavailable; the current `__EMSCRIPTEN__` path first loads the embedded `/book.bin` asset from the WASM filesystem and only falls back to the tiny built-in blob if that embedded book is unavailable.
-- `engine/src/engine.c` exposes the WASM-facing API: `init_engine`, `set_position`, `search_best_move`, `evaluate_position`, and `get_legal_moves`.
-- `Position` keeps `history_hashes/history_count`, so repetition detection works for played move sequences and search lines inside one live engine position. The public `set_position(fen)` API preserves history for identical FENs and one-ply successor FENs, and `search_best_move()` now advances `engine_position` after returning either a book move or searched move so the documented front-end `set_position(fen)` → `search_best_move()` → next `set_position(fen)` flow stays aligned and reaches threefold repetition detection correctly.
