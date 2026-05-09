@@ -31,12 +31,6 @@ import {
   type GameResult,
   type ParsedUciMove,
 } from "./gameUtils";
-import {
-  BOARD_THEMES,
-  getBoardTheme,
-  getBoardThemeStyle,
-  type ThemeKey,
-} from "./themes";
 
 const LOADING_PREVIEW_SQUARES = Array.from({ length: 16 }, (_, index) => index);
 
@@ -55,16 +49,18 @@ export default function Home() {
   const [isFenLoaderOpen, setIsFenLoaderOpen] = useState(false);
   const [playedMoves, setPlayedMoves] = useState<ParsedUciMove[]>([]);
   const [elo, setElo] = useState(ELO_DEFAULT);
-  const [themeKey, setThemeKey] = useState<ThemeKey>("classic-wood");
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return document.documentElement.dataset.theme === "dark";
+  });
   const [evaluation, setEvaluation] = useState<number | null>(null);
   const [positionError, setPositionError] = useState<string | null>(null);
   const [loadingDismissed, setLoadingDismissed] = useState(false);
   const eloRef = useRef(elo);
   const evaluationRequestIdRef = useRef(0);
   const engineSearchIdRef = useRef(0);
+  const themeInitialRender = useRef(true);
 
-  const theme = useMemo(() => getBoardTheme(themeKey), [themeKey]);
-  const themeStyle = useMemo(() => getBoardThemeStyle(theme), [theme]);
   const game = useMemo(() => replayGame(playedMoves, baseFen), [baseFen, playedMoves]);
   const history = useMemo(() => game.history({ verbose: true }) as Move[], [game]);
   const currentFen = game.fen();
@@ -95,6 +91,17 @@ export default function Home() {
   useEffect(() => {
     eloRef.current = elo;
   }, [elo]);
+
+  useEffect(() => {
+    if (themeInitialRender.current) {
+      themeInitialRender.current = false;
+      return;
+    }
+    document.documentElement.dataset.theme = isDark ? "dark" : "";
+    try {
+      localStorage.setItem("theme", isDark ? "dark" : "light");
+    } catch {}
+  }, [isDark]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -310,265 +317,240 @@ export default function Home() {
 
   return (
     <BrowserSupportGate>
-      <main className={styles.page} data-theme={theme.key} style={themeStyle}>
-        <div aria-hidden="true" className={styles.backdrop} />
-
-      {showLoadingScreen ? (
-        <div
-          aria-live="polite"
-          className={`${styles.loadingOverlay} ${
-            loadingScreenClosing ? styles.loadingOverlayExit : ""
-          }`}
-          role="status"
-        >
-          <div className={styles.loadingContent}>
-            <h2 className={styles.loadingLogo}>Claudefish</h2>
-            <p className={styles.loadingSubtitle}>{theme.loadingLabel}</p>
-            <div aria-hidden="true" className={styles.loadingPreview}>
-              {LOADING_PREVIEW_SQUARES.map((squareIndex) => (
-                <span
-                  className={
-                    squareIndex % 2 === 0
-                      ? styles.loadingPreviewLight
-                      : styles.loadingPreviewDark
-                  }
-                  key={squareIndex}
-                />
-              ))}
-            </div>
-            <div className={styles.loadingStatusRow}>
-              <span aria-hidden="true" className={styles.spinner} />
-              <span>Initializing engine</span>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <header className={styles.topBar}>
-        <h1 className={styles.logo}>
-          <span aria-hidden="true" className={styles.logoIcon}>
-            ♔
-          </span>
-          Claudefish
-        </h1>
-        <nav className={styles.topBarControls} aria-label="Game controls">
-          <div className={styles.controlGroup} role="group" aria-label="Board theme">
-            <span className={styles.controlLabel}>Theme</span>
-            <div className={styles.themePills}>
-              {BOARD_THEMES.map((option) => {
-                const isSelected = option.key === themeKey;
-
-                return (
-                  <button
-                    aria-label={option.label}
-                    aria-pressed={isSelected}
-                    className={`${styles.themePill} ${
-                      isSelected ? styles.themePillActive : ""
-                    }`}
-                    key={option.key}
-                    onClick={() => setThemeKey(option.key)}
-                    style={
-                      {
-                        "--swatch-light": option.colors.squareLight,
-                        "--swatch-dark": option.colors.squareDark,
-                      } as CSSProperties
+      <main className={styles.page}>
+        {showLoadingScreen ? (
+          <div
+            aria-live="polite"
+            className={`${styles.loadingOverlay} ${
+              loadingScreenClosing ? styles.loadingOverlayExit : ""
+            }`}
+            role="status"
+          >
+            <div className={styles.loadingContent}>
+              <h2 className={styles.loadingLogo}>Claudefish</h2>
+              <div aria-hidden="true" className={styles.loadingPreview}>
+                {LOADING_PREVIEW_SQUARES.map((squareIndex) => (
+                  <span
+                    className={
+                      squareIndex % 2 === 0
+                        ? styles.loadingPreviewLight
+                        : styles.loadingPreviewDark
                     }
-                    title={option.label}
-                    type="button"
-                  >
-                    <span aria-hidden="true" className={styles.swatch} />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className={styles.controlGroup} role="group" aria-label="Difficulty">
-            <span className={styles.controlLabel}>
-              Strength <span className={styles.eloValue}>{eloConfig.elo}</span>
-            </span>
-            <div className={styles.eloSliderRow}>
-              <span className={styles.eloBound}>{ELO_MIN}</span>
-              <input
-                aria-label={`Engine strength: ELO ${elo}`}
-                className={styles.eloSlider}
-                max={ELO_MAX}
-                min={ELO_MIN}
-                onChange={(event) => setElo(Number(event.target.value))}
-                step={50}
-                type="range"
-                value={elo}
-              />
-              <span className={styles.eloBound}>{ELO_MAX}</span>
-            </div>
-          </div>
-
-          <div className={styles.actionGroup}>
-            <button
-              className={styles.actionBtn}
-              disabled={undoPlyCount === 0}
-              onClick={handleUndo}
-              title="Undo last move"
-              type="button"
-            >
-              Undo
-            </button>
-            <button
-              className={styles.actionBtn}
-              onClick={handleNewGame}
-              title="Start new game"
-              type="button"
-            >
-              New
-            </button>
-            <button
-              aria-expanded={isFenLoaderOpen}
-              aria-label="Toggle developer FEN loader"
-              className={`${styles.devBtn} ${
-                isFenLoaderOpen ? styles.devBtnActive : ""
-              }`}
-              onClick={() => setIsFenLoaderOpen((currentValue) => !currentValue)}
-              title="FEN loader (⌥⇧F)"
-              type="button"
-            >
-              <span aria-hidden="true">⚙</span>
-            </button>
-          </div>
-        </nav>
-      </header>
-
-      {isFenLoaderOpen ? (
-        <div className={styles.fenDock}>
-          <label className={styles.fenLabel} htmlFor="fen-loader-input">
-            FEN
-          </label>
-          <input
-            autoCapitalize="off"
-            autoComplete="off"
-            autoCorrect="off"
-            className={styles.fenInput}
-            id="fen-loader-input"
-            name="fen-loader-input"
-            onChange={(event) => setFenDraft(event.target.value)}
-            placeholder="Paste a FEN string"
-            spellCheck={false}
-            type="text"
-            value={fenDraft}
-          />
-          <button className={styles.fenLoadBtn} onClick={handleLoadFen} type="button">
-            Load
-          </button>
-          <span className={styles.fenShortcut}>⌥⇧F</span>
-        </div>
-      ) : null}
-
-      <div className={styles.gameArea}>
-        <div className={styles.boardColumn}>
-          <div className={styles.playerBar}>
-            <div className={styles.playerInfo}>
-              <span
-                className={`${styles.playerAvatar} ${styles.avatarBlack}`}
-                aria-hidden="true"
-              >
-                ♚
-              </span>
-              <span className={styles.playerName}>Claudefish</span>
-              <span className={styles.playerTag}>{eloConfig.label}</span>
-              {isThinking ? (
-                <span className={styles.thinkingDot} aria-label="Thinking" />
-              ) : null}
-            </div>
-            <div className={styles.captures} aria-label="Pieces captured by Black">
-              {capturedPieces.black.map((piece, index) => (
-                <span
-                  aria-label={getPieceName(piece)}
-                  className={`${styles.capturedPiece} ${
-                    piece === piece.toUpperCase() ? styles.capWhite : styles.capBlack
-                  }`}
-                  key={`bc-${piece}-${index}`}
-                >
-                  {getPieceGlyph(piece)}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className={styles.boardRow}>
-            <div
-              aria-label={`Evaluation bar: ${evaluationLabel}`}
-              className={styles.evalBar}
-              style={
-                {
-                  "--eval-fill": `${evaluationFill}%`,
-                } as CSSProperties
-              }
-            >
-              <div className={styles.evalTrack}>
-                <div className={styles.evalBlackFill} />
-                <div className={styles.evalWhiteFill} />
-                <div className={styles.evalDivider} />
+                    key={squareIndex}
+                  />
+                ))}
               </div>
-              <span className={styles.evalLabel}>{evaluationLabel}</span>
-            </div>
-            <div className={styles.boardSurface}>
-              <Board
-                disabled={boardDisabled}
-                fen={currentFen}
-                lastMove={lastMove}
-                onMove={handleMove}
-              />
-              {result !== null ? (
-                <GameOverOverlay onNewGame={handleNewGame} result={result} />
-              ) : null}
+              <div className={styles.loadingStatusRow}>
+                <span aria-hidden="true" className={styles.spinner} />
+                <span>Initializing engine</span>
+              </div>
             </div>
           </div>
+        ) : null}
 
-          <div className={styles.playerBar}>
-            <div className={styles.playerInfo}>
-              <span
-                className={`${styles.playerAvatar} ${styles.avatarWhite}`}
-                aria-hidden="true"
-              >
-                ♔
+        <header className={styles.topBar}>
+          <h1 className={styles.logo}>
+            <span aria-hidden="true" className={styles.logoIcon}>
+              ♔
+            </span>
+            Claudefish
+          </h1>
+          <nav className={styles.topBarControls} aria-label="Game controls">
+            <div className={styles.controlGroup} role="group" aria-label="Difficulty">
+              <span className={styles.controlLabel}>
+                Strength <span className={styles.eloValue}>{eloConfig.elo}</span>
               </span>
-              <span className={styles.playerName}>You</span>
+              <div className={styles.eloSliderRow}>
+                <span className={styles.eloBound}>{ELO_MIN}</span>
+                <input
+                  aria-label={`Engine strength: ELO ${elo}`}
+                  className={styles.eloSlider}
+                  max={ELO_MAX}
+                  min={ELO_MIN}
+                  onChange={(event) => setElo(Number(event.target.value))}
+                  step={50}
+                  type="range"
+                  value={elo}
+                />
+                <span className={styles.eloBound}>{ELO_MAX}</span>
+              </div>
             </div>
-            <div className={styles.captures} aria-label="Pieces captured by White">
-              {capturedPieces.white.map((piece, index) => (
+
+            <div className={styles.actionGroup}>
+              <button
+                aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+                className={styles.themeToggle}
+                onClick={() => setIsDark((v) => !v)}
+                title={isDark ? "Light mode" : "Dark mode"}
+                type="button"
+              >
+                {isDark ? "☀" : "☽"}
+              </button>
+              <button
+                className={styles.actionBtn}
+                disabled={undoPlyCount === 0}
+                onClick={handleUndo}
+                title="Undo last move"
+                type="button"
+              >
+                Undo
+              </button>
+              <button
+                className={styles.actionBtn}
+                onClick={handleNewGame}
+                title="Start new game"
+                type="button"
+              >
+                New
+              </button>
+              <button
+                aria-expanded={isFenLoaderOpen}
+                aria-label="Toggle FEN loader"
+                className={`${styles.devBtn} ${
+                  isFenLoaderOpen ? styles.devBtnActive : ""
+                }`}
+                onClick={() => setIsFenLoaderOpen((currentValue) => !currentValue)}
+                title="FEN loader (⌥⇧F)"
+                type="button"
+              >
+                <span aria-hidden="true">⚙</span>
+              </button>
+            </div>
+          </nav>
+        </header>
+
+        {isFenLoaderOpen ? (
+          <div className={styles.fenDock}>
+            <label className={styles.fenLabel} htmlFor="fen-loader-input">
+              FEN
+            </label>
+            <input
+              autoCapitalize="off"
+              autoComplete="off"
+              autoCorrect="off"
+              className={styles.fenInput}
+              id="fen-loader-input"
+              name="fen-loader-input"
+              onChange={(event) => setFenDraft(event.target.value)}
+              placeholder="Paste a FEN string"
+              spellCheck={false}
+              type="text"
+              value={fenDraft}
+            />
+            <button className={styles.fenLoadBtn} onClick={handleLoadFen} type="button">
+              Load
+            </button>
+            <span className={styles.fenShortcut}>⌥⇧F</span>
+          </div>
+        ) : null}
+
+        <div className={styles.gameArea}>
+          <div className={styles.boardColumn}>
+            <div className={styles.playerBar}>
+              <div className={styles.playerInfo}>
                 <span
-                  aria-label={getPieceName(piece)}
-                  className={`${styles.capturedPiece} ${
-                    piece === piece.toUpperCase() ? styles.capWhite : styles.capBlack
-                  }`}
-                  key={`wc-${piece}-${index}`}
+                  className={`${styles.playerAvatar} ${styles.avatarBlack}`}
+                  aria-hidden="true"
                 >
-                  {getPieceGlyph(piece)}
+                  ♚
                 </span>
-              ))}
+                <span className={styles.playerName}>Claudefish</span>
+                <span className={styles.playerTag}>{eloConfig.label}</span>
+                {isThinking ? (
+                  <span className={styles.thinkingDot} aria-label="Thinking" />
+                ) : null}
+              </div>
+              <div className={styles.captures} aria-label="Pieces captured by Black">
+                {capturedPieces.black.map((piece, index) => (
+                  <span
+                    aria-label={getPieceName(piece)}
+                    className={`${styles.capturedPiece} ${
+                      piece === piece.toUpperCase() ? styles.capWhite : styles.capBlack
+                    }`}
+                    key={`bc-${piece}-${index}`}
+                  >
+                    {getPieceGlyph(piece)}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className={styles.boardRow}>
+              <div
+                aria-label={`Evaluation bar: ${evaluationLabel}`}
+                className={styles.evalBar}
+                style={
+                  {
+                    "--eval-fill": `${evaluationFill}%`,
+                  } as CSSProperties
+                }
+              >
+                <div className={styles.evalTrack}>
+                  <div className={styles.evalBlackFill} />
+                  <div className={styles.evalWhiteFill} />
+                  <div className={styles.evalDivider} />
+                </div>
+                <span className={styles.evalLabel}>{evaluationLabel}</span>
+              </div>
+              <div className={styles.boardSurface}>
+                <Board
+                  disabled={boardDisabled}
+                  fen={currentFen}
+                  lastMove={lastMove}
+                  onMove={handleMove}
+                />
+                {result !== null ? (
+                  <GameOverOverlay onNewGame={handleNewGame} result={result} />
+                ) : null}
+              </div>
+            </div>
+
+            <div className={styles.playerBar}>
+              <div className={styles.playerInfo}>
+                <span
+                  className={`${styles.playerAvatar} ${styles.avatarWhite}`}
+                  aria-hidden="true"
+                >
+                  ♔
+                </span>
+                <span className={styles.playerName}>You</span>
+              </div>
+              <div className={styles.captures} aria-label="Pieces captured by White">
+                {capturedPieces.white.map((piece, index) => (
+                  <span
+                    aria-label={getPieceName(piece)}
+                    className={`${styles.capturedPiece} ${
+                      piece === piece.toUpperCase() ? styles.capWhite : styles.capBlack
+                    }`}
+                    key={`wc-${piece}-${index}`}
+                  >
+                    {getPieceGlyph(piece)}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className={styles.statusLine}>
+              {isThinking ? (
+                <span aria-hidden="true" className={styles.spinner} />
+              ) : null}
+              <span className={styles.statusText}>{statusLabel}</span>
+              <span className={styles.statusEval}>{evaluationLabel}</span>
             </div>
           </div>
 
-          <div className={styles.statusLine}>
-            {isThinking ? (
-              <span aria-hidden="true" className={styles.spinner} />
-            ) : null}
-            <span className={styles.statusText}>{statusLabel}</span>
-            <span className={styles.statusEval}>{evaluationLabel}</span>
+          <aside className={styles.movePanel}>
+            <MoveHistory rows={historyRows} />
+          </aside>
+        </div>
+
+        {positionError !== null || engineError !== null ? (
+          <div className={styles.errorToast} role="alert">
+            <span aria-hidden="true" className={styles.errorDot} />
+            <span>{positionError ?? engineError}</span>
           </div>
-        </div>
-
-        <aside className={styles.movePanel}>
-          <MoveHistory rows={historyRows} />
-        </aside>
-      </div>
-
-      {positionError !== null || engineError !== null ? (
-        <div className={styles.errorToast} role="alert">
-          <span aria-hidden="true" className={styles.errorDot} />
-          <span>{positionError ?? engineError}</span>
-        </div>
-      ) : null}
-    </main>
+        ) : null}
+      </main>
     </BrowserSupportGate>
   );
 }

@@ -74,7 +74,7 @@ export default function BrowserSupportGate({ children }: BrowserSupportGateProps
         </div>
 
         <footer className={styles.gateFooter}>
-          <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--theme-text-soft)" }}>
+          <p style={{ margin: 0, fontSize: "0.72rem", color: "var(--text-secondary)" }}>
             Claudefish requires a modern desktop browser with WebAssembly and
             SharedArrayBuffer support.
           </p>

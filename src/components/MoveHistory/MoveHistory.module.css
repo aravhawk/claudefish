@@ -1,7 +1,7 @@
 .panel {
   display: grid;
   grid-template-rows: auto 1fr;
-  gap: 0.55rem;
+  gap: 0.5rem;
   height: 100%;
   min-height: 0;
 }
@@ -12,53 +12,53 @@
   justify-content: space-between;
   gap: 0.5rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--theme-panel-border);
+  border-bottom: 1px solid var(--border);
 }
 
 .title {
   margin: 0;
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: 0.65rem;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: var(--theme-text-soft);
+  color: var(--text-tertiary);
 }
 
 .count {
   display: inline-grid;
   place-items: center;
-  min-width: 1.35rem;
-  height: 1.35rem;
-  padding: 0 0.35rem;
-  border-radius: 0.3rem;
-  background: var(--theme-panel-muted);
-  border: 1px solid var(--theme-panel-border);
-  font-size: 0.68rem;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  font-size: 0.65rem;
   font-weight: 700;
-  color: var(--theme-accent);
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
 .scrollArea {
   overflow-y: auto;
   min-height: 0;
-  padding-right: 0.2rem;
-  scrollbar-color: var(--theme-scrollbar-thumb) transparent;
+  padding-right: 0.15rem;
+  scrollbar-color: var(--border) transparent;
   scrollbar-width: thin;
 }
 
 .scrollArea::-webkit-scrollbar {
-  width: 0.35rem;
+  width: 0.3rem;
 }
 
 .scrollArea::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: var(--theme-scrollbar-thumb);
+  background: var(--border);
 }
 
 .list {
   display: grid;
-  gap: 0.08rem;
+  gap: 0;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -68,28 +68,28 @@
   display: grid;
   grid-template-columns: 2rem 1fr 1fr;
   align-items: center;
-  padding: 0.38rem 0.5rem;
-  border-radius: 0.35rem;
-  transition: background 160ms ease;
+  padding: 0.35rem 0.4rem;
+  border-radius: 3px;
+  transition: background 120ms ease;
 }
 
 .row:hover {
-  background: var(--theme-panel-muted);
+  background: var(--bg-inset);
 }
 
 .moveNumber {
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-weight: 600;
-  color: var(--theme-text-soft);
+  color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
 
 .moveCell {
   font-family: var(--font-mono);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  color: var(--theme-heading);
+  color: var(--text);
   letter-spacing: 0.01em;
 }
 
@@ -97,10 +97,10 @@
   margin: 0;
   padding: 2rem 0.5rem;
   text-align: center;
-  font-size: 0.78rem;
-  color: var(--theme-text-soft);
+  font-size: 0.76rem;
+  color: var(--text-tertiary);
   display: grid;
-  gap: 0.65rem;
+  gap: 0.6rem;
   justify-items: center;
   align-content: center;
 }
@@ -108,8 +108,8 @@
 .emptyState::before {
   content: "♔";
   display: block;
-  font-size: 2rem;
-  opacity: 0.3;
+  font-size: 1.75rem;
+  opacity: 0.2;
   font-family:
     "Noto Sans Symbols 2",
     "Apple Symbols",
@@ -121,10 +121,10 @@
 @media (max-width: 560px) {
   .row {
     grid-template-columns: 1.6rem 1fr 1fr;
-    padding: 0.32rem 0.4rem;
+    padding: 0.3rem 0.35rem;
   }
 
   .moveCell {
-    font-size: 0.75rem;
+    font-size: 0.73rem;
   }
 }
