@@ -63,15 +63,32 @@ async function loadModule(): Promise<EmscriptenModule> {
     throw new Error("createChessEngine was not loaded into the worker global scope.");
   }
 
-  return createChessEngine({
-    locateFile(path) {
-      return `/engine/${path}`;
-    },
-    // Emscripten uses document.currentScript.src to locate the worker script for
-    // pthreads, but document is undefined inside a Web Worker. Supplying the URL
-    // explicitly prevents new Worker(undefined) and the resulting hang.
-    mainScriptUrlOrBlob: "/engine/engine.js",
+  const INIT_TIMEOUT_MS = 120_000;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(
+      () =>
+        reject(
+          new Error(
+            "Engine timed out after 2 minutes. Check your connection and refresh the page.",
+          ),
+        ),
+      INIT_TIMEOUT_MS,
+    );
   });
+
+  return Promise.race([
+    createChessEngine({
+      locateFile(path) {
+        return `/engine/${path}`;
+      },
+      // Emscripten uses document.currentScript.src to locate the worker script for
+      // pthreads, but document is undefined inside a Web Worker. Supplying the URL
+      // explicitly prevents new Worker(undefined) and the resulting hang.
+      mainScriptUrlOrBlob: "/engine/engine.js",
+    }),
+    timeoutPromise,
+  ]);
 }
 
 function createBindings(module: EmscriptenModule): EngineBindings {

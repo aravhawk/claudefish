@@ -121,7 +121,8 @@ export function shouldShowLoadingOverlay({
   isReady: boolean;
   loadingDismissed: boolean;
 }): boolean {
-  return engineError === null && (!isReady || !loadingDismissed);
+  if (engineError !== null) return true;
+  return !isReady || !loadingDismissed;
 }
 
 export function getUndoPlyCount(fen: string, historyLength: number): number {

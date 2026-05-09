@@ -324,7 +324,7 @@ export default function Home() {
             className={`${styles.loadingOverlay} ${
               loadingScreenClosing ? styles.loadingOverlayExit : ""
             }`}
-            role="status"
+            role={engineError !== null ? "alert" : "status"}
           >
             <div className={styles.loadingContent}>
               <h2 className={styles.loadingLogo}>Claudefish</h2>
@@ -340,10 +340,23 @@ export default function Home() {
                   />
                 ))}
               </div>
-              <div className={styles.loadingStatusRow}>
-                <span aria-hidden="true" className={styles.spinner} />
-                <span>Initializing engine</span>
-              </div>
+              {engineError !== null ? (
+                <div className={styles.loadingErrorRow}>
+                  <span className={styles.loadingErrorMsg}>{engineError}</span>
+                  <button
+                    className={styles.loadingRetryBtn}
+                    onClick={() => void resetEngine()}
+                    type="button"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : (
+                <div className={styles.loadingStatusRow}>
+                  <span aria-hidden="true" className={styles.spinner} />
+                  <span>Initializing engine</span>
+                </div>
+              )}
             </div>
           </div>
         ) : null}

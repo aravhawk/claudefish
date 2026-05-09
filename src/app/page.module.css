@@ -102,6 +102,37 @@
   color: var(--text-secondary);
 }
 
+.loadingErrorRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 280px;
+  text-align: center;
+}
+
+.loadingErrorMsg {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.loadingRetryBtn {
+  padding: 0.4rem 1.1rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.loadingRetryBtn:hover {
+  background: var(--bg-inset);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Top bar                                                           */
 /* ------------------------------------------------------------------ */
