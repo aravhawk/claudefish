@@ -67,33 +67,8 @@ export function useChessEngine(): UseChessEngineResult {
       );
     });
 
-    const workerFailurePromise = new Promise<never>((_, reject) => {
-      const handleError = (event: ErrorEvent) => {
-        reject(new Error(event.message || "Chess engine worker failed during startup."));
-      };
-      const handleMessageError = () => {
-        reject(new Error("Chess engine worker sent an unreadable startup message."));
-      };
-
-      worker.addEventListener("error", handleError, { once: true });
-      worker.addEventListener("messageerror", handleMessageError, { once: true });
-
-      initTimeoutController.signal.addEventListener(
-        "abort",
-        () => {
-          worker.removeEventListener("error", handleError);
-          worker.removeEventListener("messageerror", handleMessageError);
-        },
-        { once: true },
-      );
-    });
-
     try {
-      const status = await Promise.race([
-        engine.initEngine(),
-        initTimeoutPromise,
-        workerFailurePromise,
-      ]);
+      const status = await Promise.race([engine.initEngine(), initTimeoutPromise]);
 
       if (!mountedRef.current || workerSessionIdRef.current !== sessionId) {
         return;
