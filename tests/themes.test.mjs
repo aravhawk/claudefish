@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
+const themes = await import("../src/app/themes.ts");
+
+const {
   BOARD_THEMES,
   getBoardTheme,
   getBoardThemeStyle,
-} from "../src/app/themes.ts";
+} = themes.default ?? themes;
 
 test("board themes expose the three required premium presets", () => {
   assert.deepEqual(

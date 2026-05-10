@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 
 import { Chess } from "chess.js";
 
-import {
+const gameUtils = await import("../src/app/gameUtils.ts");
+
+const {
   buildMoveHistoryRows,
   collectCapturedPieces,
   ELO_DEFAULT,
@@ -19,7 +21,7 @@ import {
   shouldShowLoadingOverlay,
   shouldEngineMove,
   toWhiteCentipawns,
-} from "../src/app/gameUtils.ts";
+} = gameUtils.default ?? gameUtils;
 
 test("parseUciMove handles standard moves and promotions", () => {
   assert.deepEqual(parseUciMove("e2e4"), {
