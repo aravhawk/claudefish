@@ -27,6 +27,14 @@ const REPETITION_MOVES = ["g1f3", "g8f6", "f3g1", "f6g8", "g1f3", "g8f6", "f3g1"
 const FRONTEND_FLOW_START_FEN = "8/8/8/k7/4q3/8/K7/2Q5 w - - 0 1";
 const FRONTEND_FLOW_USER_MOVES = ["c1g1", "a2a3", "a3a2", "a2a3", "a3a2"];
 const FRONTEND_FLOW_ENGINE_MOVES = ["e4c2", "c2c3", "c3c2", "c2c3", "c3c2"];
+const engineRuntimeSkipReason =
+  typeof globalThis.Worker === "function"
+    ? undefined
+    : "Browser-style Worker is unavailable in this Node.js runtime for the pthread WASM build.";
+
+function engineRuntimeTest(name, fn) {
+  test(name, { skip: engineRuntimeSkipReason }, fn);
+}
 
 function setGlobalProperty(name, value) {
   Object.defineProperty(globalThis, name, {
@@ -136,14 +144,14 @@ test("engine.wasm exports the required C API", async () => {
   }
 });
 
-test("engine module initializes successfully in a Node.js test context", async () => {
+engineRuntimeTest("engine module initializes successfully in a Node.js test context", async () => {
   const { engineModule } = await instantiateEngine();
 
   assert.equal(typeof engineModule._init_engine, "function", "engine module should expose _init_engine");
   assert.equal(engineModule._init_engine(), 0, "init_engine should return success");
 });
 
-test("embedded Polyglot book is available in the WASM runtime", async () => {
+engineRuntimeTest("embedded Polyglot book is available in the WASM runtime", async () => {
   const { engineModule } = await instantiateEngine();
   const bookBytes = engineModule.FS?.readFile?.("/book.bin");
 
@@ -151,7 +159,7 @@ test("embedded Polyglot book is available in the WASM runtime", async () => {
   assert.ok(bookBytes.length > 2_000_000, `expected real opening book data, got ${bookBytes.length} bytes`);
 });
 
-test("engine API returns the expected types and move count", async () => {
+engineRuntimeTest("engine API returns the expected types and move count", async () => {
   const { engineModule } = await instantiateEngine();
   const api = createEngineApi(engineModule);
 
@@ -173,7 +181,7 @@ test("engine API returns the expected types and move count", async () => {
   assert.equal(legalMoves.length, 20, "get_legal_moves should return 20 legal moves from the start");
 });
 
-test("invalid FEN returns an error code and the engine recovers", async () => {
+engineRuntimeTest("invalid FEN returns an error code and the engine recovers", async () => {
   const { engineModule } = await instantiateEngine();
   const api = createEngineApi(engineModule);
 
@@ -185,7 +193,7 @@ test("invalid FEN returns an error code and the engine recovers", async () => {
   assert.match(recoveryMove, UCI_MOVE_REGEX, "engine should still search successfully after recovery");
 });
 
-test("sequential searches produce valid UCI moves", async () => {
+engineRuntimeTest("sequential searches produce valid UCI moves", async () => {
   const { engineModule } = await instantiateEngine();
   const api = createEngineApi(engineModule);
   const positions = [
@@ -206,7 +214,7 @@ test("sequential searches produce valid UCI moves", async () => {
   }
 });
 
-test("FEN-only set_position flow preserves repetition history", async () => {
+engineRuntimeTest("FEN-only set_position flow preserves repetition history", async () => {
   const { engineModule } = await instantiateEngine();
   const api = createEngineApi(engineModule);
   const game = new Chess(REPETITION_START_FEN);
@@ -228,7 +236,7 @@ test("FEN-only set_position flow preserves repetition history", async () => {
   assert.equal(api.evaluatePosition(), 0, "repetition through set_position should be scored as a draw");
 });
 
-test("frontend-style set_position/search flow preserves repetition history", async () => {
+engineRuntimeTest("frontend-style set_position/search flow preserves repetition history", async () => {
   const { engineModule } = await instantiateEngine();
   const api = createEngineApi(engineModule);
   const game = new Chess(FRONTEND_FLOW_START_FEN);
@@ -267,7 +275,7 @@ test("frontend-style set_position/search flow preserves repetition history", asy
   );
 });
 
-test("castling and promotion moves use UCI format", async () => {
+engineRuntimeTest("castling and promotion moves use UCI format", async () => {
   const { engineModule } = await instantiateEngine();
   const api = createEngineApi(engineModule);
 
@@ -294,7 +302,7 @@ test("castling and promotion moves use UCI format", async () => {
   );
 });
 
-test("WASM memory stays within 2x after 100 depth-4 searches", async () => {
+engineRuntimeTest("WASM memory stays within 2x after 100 depth-4 searches", async () => {
   const { engineModule, memory } = await instantiateEngine({ captureMemory: true });
   const api = createEngineApi(engineModule);
 

@@ -7,6 +7,11 @@ import type { EngineService, UseChessEngineResult } from "@/types/engine";
 
 const ENGINE_NOT_READY_ERROR = "Chess engine worker is not ready yet.";
 const INVALID_FEN_ERROR = "Failed to set engine position from FEN.";
+const ENGINE_INIT_TIMEOUT_MS = 30_000;
+
+function formatUnknownError(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export function useChessEngine(): UseChessEngineResult {
   const workerRef = useRef<Worker | null>(null);
@@ -45,8 +50,50 @@ export function useChessEngine(): UseChessEngineResult {
       setIsThinking(false);
     }
 
+    const initTimeoutController = new AbortController();
+    const initTimeoutPromise = new Promise<never>((_, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        reject(
+          new Error(
+            "Chess engine startup timed out. Check that engine.js and engine.wasm are reachable and refresh the page.",
+          ),
+        );
+      }, ENGINE_INIT_TIMEOUT_MS);
+
+      initTimeoutController.signal.addEventListener(
+        "abort",
+        () => window.clearTimeout(timeoutId),
+        { once: true },
+      );
+    });
+
+    const workerFailurePromise = new Promise<never>((_, reject) => {
+      const handleError = (event: ErrorEvent) => {
+        reject(new Error(event.message || "Chess engine worker failed during startup."));
+      };
+      const handleMessageError = () => {
+        reject(new Error("Chess engine worker sent an unreadable startup message."));
+      };
+
+      worker.addEventListener("error", handleError, { once: true });
+      worker.addEventListener("messageerror", handleMessageError, { once: true });
+
+      initTimeoutController.signal.addEventListener(
+        "abort",
+        () => {
+          worker.removeEventListener("error", handleError);
+          worker.removeEventListener("messageerror", handleMessageError);
+        },
+        { once: true },
+      );
+    });
+
     try {
-      const status = await engine.initEngine();
+      const status = await Promise.race([
+        engine.initEngine(),
+        initTimeoutPromise,
+        workerFailurePromise,
+      ]);
 
       if (!mountedRef.current || workerSessionIdRef.current !== sessionId) {
         return;
@@ -64,11 +111,14 @@ export function useChessEngine(): UseChessEngineResult {
 
       setIsReady(false);
       setError(
-        initializationError instanceof Error
-          ? initializationError.message
-          : "Failed to initialize the chess engine worker.",
+        formatUnknownError(
+          initializationError,
+          "Failed to initialize the chess engine worker.",
+        ),
       );
       disposeCurrentWorker();
+    } finally {
+      initTimeoutController.abort();
     }
   }, [disposeCurrentWorker]);
 
@@ -110,8 +160,7 @@ export function useChessEngine(): UseChessEngineResult {
 
         return await engine.searchBestMove(depth, timeMs);
       } catch (searchError: unknown) {
-        const message =
-          searchError instanceof Error ? searchError.message : "Chess engine search failed.";
+        const message = formatUnknownError(searchError, "Chess engine search failed.");
 
         if (mountedRef.current && workerSessionIdRef.current === sessionId) {
           setError(message);
@@ -150,10 +199,7 @@ export function useChessEngine(): UseChessEngineResult {
       try {
         return await engine.evaluatePosition();
       } catch (evaluationError: unknown) {
-        const message =
-          evaluationError instanceof Error
-            ? evaluationError.message
-            : "Position evaluation failed.";
+        const message = formatUnknownError(evaluationError, "Position evaluation failed.");
 
         if (mountedRef.current && workerSessionIdRef.current === sessionId) {
           setError(message);

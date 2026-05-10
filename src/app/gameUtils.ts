@@ -36,7 +36,7 @@ export function getEloConfig(elo: number): EloDifficultyConfig {
   else if (clamped < 1800) label = "Club";
   else if (clamped < 2200) label = "Expert";
   else if (clamped < 2600) label = "Master";
-  else label = "Full Strength";
+  else label = "Grandmaster";
 
   return { elo: clamped, depth, timeMs, label };
 }
@@ -121,7 +121,7 @@ export function shouldShowLoadingOverlay({
   isReady: boolean;
   loadingDismissed: boolean;
 }): boolean {
-  if (engineError !== null) return true;
+  if (engineError !== null) return false;
   return !isReady || !loadingDismissed;
 }
 

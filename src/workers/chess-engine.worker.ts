@@ -18,6 +18,8 @@ interface EmscriptenModule {
 interface CreateChessEngineOptions {
   locateFile(path: string, prefix: string): string;
   mainScriptUrlOrBlob?: string;
+  print?(message: string): void;
+  printErr?(message: string): void;
 }
 
 type CreateChessEngineModule = (
@@ -63,14 +65,14 @@ async function loadModule(): Promise<EmscriptenModule> {
     throw new Error("createChessEngine was not loaded into the worker global scope.");
   }
 
-  const INIT_TIMEOUT_MS = 120_000;
+  const INIT_TIMEOUT_MS = 30_000;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(
       () =>
         reject(
           new Error(
-            "Engine timed out after 2 minutes. Check your connection and refresh the page.",
+            "Engine timed out while loading WASM assets. Check that /engine/engine.js and /engine/engine.wasm are reachable, then refresh the page.",
           ),
         ),
       INIT_TIMEOUT_MS,
@@ -86,6 +88,12 @@ async function loadModule(): Promise<EmscriptenModule> {
       // pthreads, but document is undefined inside a Web Worker. Supplying the URL
       // explicitly prevents new Worker(undefined) and the resulting hang.
       mainScriptUrlOrBlob: "/engine/engine.js",
+      print(message) {
+        console.info(`[claudefish-engine] ${message}`);
+      },
+      printErr(message) {
+        console.error(`[claudefish-engine] ${message}`);
+      },
     }),
     timeoutPromise,
   ]);

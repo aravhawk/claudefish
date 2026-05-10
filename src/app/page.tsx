@@ -35,6 +35,14 @@ import {
 const LOADING_PREVIEW_SQUARES = Array.from({ length: 16 }, (_, index) => index);
 
 export default function Home() {
+  return (
+    <BrowserSupportGate>
+      <Game />
+    </BrowserSupportGate>
+  );
+}
+
+function Game() {
   const {
     error: engineError,
     evaluatePosition,
@@ -316,7 +324,6 @@ export default function Home() {
   }, [cancelPendingEngineWork, fenDraft]);
 
   return (
-    <BrowserSupportGate>
       <main className={styles.page}>
         {showLoadingScreen ? (
           <div
@@ -564,7 +571,6 @@ export default function Home() {
           </div>
         ) : null}
       </main>
-    </BrowserSupportGate>
   );
 }
 
